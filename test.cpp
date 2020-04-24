@@ -6,7 +6,7 @@ using namespace GE;
 class GraphExTest : public ::testing::Test {
 };
 
-TEST_F(GraphExTest, AllNodeWithoutArgumentsPassing)
+TEST_F(GraphExTest, ShouldBeAbleToRunSimpleChainGraph)
 {
     decltype(auto) first =
         MakeNode([]() -> void { std::cout << "Running first\n"; });
@@ -16,14 +16,14 @@ TEST_F(GraphExTest, AllNodeWithoutArgumentsPassing)
         MakeNode([]() -> void { std::cout << "Running third\n"; });
     decltype(auto) fourth =
         MakeNode([]() -> void { std::cout << "Running fourth\n"; });
-    second->SetParent(*first);
-    fourth->SetParent(*first);
-    second->SetParent(*third);
-    fourth->SetParent(*third);
-    third->SetParent(*first);
+    second.SetParent(first);
+    fourth.SetParent(first);
+    second.SetParent(third);
+    fourth.SetParent(third);
+    third.SetParent(first);
     GraphExOptions opt;
     GraphEx executor(opt);
-    executor.RegisterInputNodes(first);
+    executor.RegisterInputNodes(&first);
     EXPECT_FALSE(executor.HasCycle());
     executor.Execute();
 
@@ -35,13 +35,33 @@ TEST_F(GraphExTest, AllNodeWithoutArgumentsPassing)
     */
 }
 
-TEST_F(GraphExTest, MixOfNodeWithArgumentPassing)
+TEST_F(GraphExTest, ShouldBeAbleToRunSimpleChainGraph2)
+{
+    std::function<int(void)> first_func = []() -> int { return 1; };
+    decltype(auto) first = MakeNode(first_func);
+    decltype(auto) second =
+        MakeNode([]() -> void { std::cout << "Running second\n"; });
+    second.SetParent(first);
+    GraphExOptions opt;
+    GraphEx executor(opt);
+    executor.RegisterInputNodes(&first);
+    EXPECT_FALSE(executor.HasCycle());
+    executor.Execute();
+    /**
+    Running first
+    Running third
+    Running second
+    Running fourth
+    */
+}
+
+TEST_F(GraphExTest, ShouldBeAbleToRunSimpleGraphWithArgumentPassing)
 {
     decltype(auto) first =
         MakeNode([]() -> void { std::cout << "Running first\n"; });
 
     // Need to explicitly set this one or compiler wont be able to deduce
-    // whether this is Node<void, Args..> or Node<ReturnType, ...>
+    // whether this is MakeNode<void, Args..> or MakeNode<ReturnType, ...>
     std::function<int(void)> second_func = []() -> int {
         std::cout << "Running second\nReturn 1\n";
         return 1;
@@ -71,19 +91,19 @@ TEST_F(GraphExTest, MixOfNodeWithArgumentPassing)
     };
     decltype(auto) fifth = MakeNode(fifth_func);
 
-    second->SetParent(*first);
-    third->SetParent<0>(*second);
-    fourth->SetParent<0>(*second);
-    fifth->SetParent<0>(*third);
-    fifth->SetParent<1>(*fourth);
+    second.SetParent(first);
+    third.SetParent<0>(second);
+    fourth.SetParent<0>(second);
+    fifth.SetParent<0>(third);
+    fifth.SetParent<1>(fourth);
     GraphExOptions opt;
     GraphEx executor(opt);
-    executor.RegisterInputNodes(first);
+    executor.RegisterInputNodes(&first);
     EXPECT_FALSE(executor.HasCycle());
     executor.Execute();
-    EXPECT_EQ(third->Collect(), 3);
-    EXPECT_EQ(fourth->Collect(), 2);
-    EXPECT_EQ(fifth->Collect(), 1);
+    EXPECT_EQ(third.Collect(), 3);
+    EXPECT_EQ(fourth.Collect(), 2);
+    EXPECT_EQ(fifth.Collect(), 1);
     /**
     Running first
     Running second
@@ -107,13 +127,13 @@ TEST_F(GraphExTest, CheckGraphHasCycle)
         MakeNode([]() -> void { std::cout << "Running third\n"; });
     decltype(auto) fourth =
         MakeNode([]() -> void { std::cout << "Running fourth\n"; });
-    second->SetParent(*first);
-    third->SetParent(*second);
-    fourth->SetParent(*third);
-    first->SetParent(*fourth);
+    second.SetParent(first);
+    third.SetParent(second);
+    fourth.SetParent(third);
+    first.SetParent(fourth);
     GraphExOptions opt;
     GraphEx executor(opt);
-    executor.RegisterInputNodes(first);
+    executor.RegisterInputNodes(&first);
     EXPECT_TRUE(executor.HasCycle());
 }
 
@@ -138,18 +158,19 @@ TEST_F(GraphExTest, OptimizePassingArgumentByMoving)
             return a;
         };
         decltype(auto) second = MakeNode(second_func);
-        second->SetParent(*preprocess);
-        second->SetParent<0>(*first);
-        second->MarkAsOutput();
+        second.SetParent(preprocess);
+        second.SetParent<0>(first);
+        second.MarkAsOutput();
         GraphExOptions opt;
         GraphEx executor(opt);
-        executor.RegisterInputNodes(first);
-        executor.RegisterInputNodes(preprocess);
+        executor.RegisterInputNodes(&first);
+        executor.RegisterInputNodes(&preprocess);
         executor.Execute();
         try {
-            // first node is not marked output during execution so the result
-            // from first func is not kept but moved to second func
-            auto initial_input = first->Collect();
+            // first MakeNode is not marked output during execution so the
+            // result from first func is not kept but moved to second func
+            auto initial_input = first.Collect();
+            FAIL() << "Expected std::runtime_error";
         }
         catch (const std::runtime_error& err) {
             EXPECT_EQ(err.what(), std::string("No result found in node"));
@@ -169,19 +190,83 @@ TEST_F(GraphExTest, OptimizePassingArgumentByMoving)
             return a;
         };
         decltype(auto) second = MakeNode(second_func);
-        second->SetParent(*preprocess);
-        second->SetParent<0>(*first);
-        second->MarkAsOutput();
-        first->MarkAsOutput();
+        second.SetParent(preprocess);
+        second.SetParent<0>(first);
+        second.MarkAsOutput();
+        first.MarkAsOutput();
         GraphExOptions opt;
         GraphEx executor(opt);
-        executor.RegisterInputNodes(first);
-        executor.RegisterInputNodes(preprocess);
+        executor.RegisterInputNodes(&first);
+        executor.RegisterInputNodes(&preprocess);
         executor.Execute();
-        auto final_output = second->Collect();
+        auto final_output = second.Collect();
         EXPECT_EQ(final_output.rand_str, "just updated");
-        auto initial_input = first->Collect();
+        auto initial_input = first.Collect();
         EXPECT_EQ(initial_input.rand_str, "hello universe");
+    }
+}
+
+TEST_F(GraphExTest, ShouldBeAbleToHandleNonCopyableStruct)
+{
+    using NonCopyableType = std::unique_ptr<int>;
+    std::function<NonCopyableType()> first_func = []() -> NonCopyableType {
+        return std::make_unique<int>(10);
+    };
+    decltype(auto) first = MakeNode(first_func);
+    std::function<NonCopyableType(NonCopyableType)> second_func =
+        [](NonCopyableType a) -> NonCopyableType {
+        *a = 6;
+        return a;
+    };
+    decltype(auto) second = MakeNode(second_func);
+    second.SetParent<0>(first);
+    second.MarkAsOutput();
+    GraphExOptions opt;
+    GraphEx executor(opt);
+    executor.RegisterInputNodes(&first);
+    executor.Execute();
+    std::cout << "Done running\n";
+    try {
+        auto initial_input = first.Collect();
+        FAIL() << "Expected std::runtime_error";
+    }
+    catch (const std::runtime_error& err) {
+        EXPECT_EQ(err.what(), std::string("No result found in node"));
+    }
+    auto final_output = second.Collect();
+    EXPECT_EQ(*final_output, 6);
+}
+
+TEST_F(GraphExTest, ShouldThrowIfNonCopyableObjectIsPassedToMoreThanOneChild)
+{
+    using NonCopyableType = std::unique_ptr<int>;
+    std::function<NonCopyableType()> first_func = []() -> NonCopyableType {
+        return std::make_unique<int>(10);
+    };
+    decltype(auto) first = MakeNode(first_func);
+
+    std::function<NonCopyableType(NonCopyableType)> second_func =
+        [](NonCopyableType a) -> NonCopyableType {
+        *a = 6;
+        return a;
+    };
+    decltype(auto) second = MakeNode(second_func);
+
+    std::function<NonCopyableType(NonCopyableType)> third_func =
+        [](NonCopyableType a) -> NonCopyableType {
+        *a = 9;
+        return a;
+    };
+    decltype(auto) third = MakeNode(third_func);
+    second.SetParent<0>(first);
+    try {
+        third.SetParent<0>(first);
+        FAIL() << "Expected std::runtime_error";
+    }
+    catch (const std::logic_error& err) {
+        EXPECT_EQ(err.what(),
+                  std::string("Non copyable result cannot be passed to more "
+                              "than 1 child process"));
     }
 }
 
