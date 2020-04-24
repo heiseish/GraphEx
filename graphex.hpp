@@ -1,5 +1,9 @@
 /// Draft 2. Limitations
 /// - No concurrency
+#pragma once
+
+#ifndef GRAPH_EX_H
+#define GRAPH_EX_H
 
 #include <atomic>
 #include <functional>
@@ -400,3 +404,5 @@ decltype(auto) MakeNode(std::function<void(void)> func)
 }
 
 }  // namespace GE
+
+#endif

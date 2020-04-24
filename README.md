@@ -3,9 +3,10 @@
 ![Status](https://img.shields.io/static/v1.svg?label=Status&message=alpha&color=yellow)
 
 <img src="docs/3-03.svg">
-Credit [Network Vectors by Vecteezy](https://www.vecteezy.com/free-vector/network)
 
-**A single-file header-only graph-based execution model for a network of interlinked tasks. Support passing of arguments between each node task.**
+Image Credit [Network Vectors by Vecteezy](https://www.vecteezy.com/free-vector/network)
+
+**A single-file header-only C++17 graph-based execution model for a network of interlinked tasks. Support passing of arguments between each node task.**
 
 ## Sample usage:
 
@@ -158,13 +159,60 @@ GraphEx executor(opt);
 executor.RegisterInputNodes(&first);
 executor.Execute();
 std::cout << "Done running\n";
-try {
-    auto initial_input = first.Collect();
-    FAIL() << "Expected std::runtime_error";
-}
-catch (const std::runtime_error& err) {
-    EXPECT_EQ(err.what(), std::string("No result found in node"));
-}
 auto final_output = second.Collect();
 EXPECT_EQ(*final_output, 6);
 ```
+
+### Create Node from struct/class method
+```C++
+struct Foo {
+    auto first() -> int { return 4; }
+    auto second(int x) -> int { return x * 2; }
+};
+
+Foo foo;
+std::function<int(void)> first_func = std::bind(&Foo::first, &foo);
+decltype(auto) first = MakeNode(first_func);
+
+std::function<int(int)> second_func =
+    std::bind(&Foo::second, &foo, std::placeholders::_1);
+decltype(auto) second = MakeNode(second_func);
+
+second.SetParent<0>(first);
+second.MarkAsOutput();
+GraphExOptions opt;
+GraphEx executor(opt);
+executor.RegisterInputNodes(&first);
+executor.Execute();
+
+EXPECT_EQ(second.Collect(), 8);
+```
+
+## Installation
+Simply include `graphex.hpp` in your project and make sure build the project with C++17-compatible compiler.
+
+
+## Development
+The project is still under development and still too early for any usage. 
+
+To build the tests `./build.sh -b`
+
+To run the tests `./build.sh -rt`
+
+### TODO
+- [ ] Add concurrency to tasks execution
+
+## Contribute
+### Current contributors
+[Truong Giang](https://github.com/heiseish) and
+[Minh Phuc](https://github.com/le-minhphuc).
+
+
+We welcome contributions! Any PR is welcome.
+
+## Feedback
+For any feedback or to report a bug, please file a [GitHub Issue](https://github.com/heiseish/graphex/issues).
+
+***
+# License
+[MIT License](LICENSE)

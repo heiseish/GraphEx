@@ -270,6 +270,31 @@ TEST_F(GraphExTest, ShouldThrowIfNonCopyableObjectIsPassedToMoreThanOneChild)
     }
 }
 
+TEST_F(GraphExTest, ShouldBeAbleToAddStructMethod)
+{
+    struct Foo {
+        auto first() -> int { return 4; }
+        auto second(int x) -> int { return x * 2; }
+    };
+
+    Foo foo;
+    std::function<int(void)> first_func = std::bind(&Foo::first, &foo);
+    decltype(auto) first = MakeNode(first_func);
+
+    std::function<int(int)> second_func =
+        std::bind(&Foo::second, &foo, std::placeholders::_1);
+    decltype(auto) second = MakeNode(second_func);
+
+    second.SetParent<0>(first);
+    second.MarkAsOutput();
+    GraphExOptions opt;
+    GraphEx executor(opt);
+    executor.RegisterInputNodes(&first);
+    executor.Execute();
+
+    EXPECT_EQ(second.Collect(), 8);
+}
+
 auto main(int argc, char** argv) -> int
 {
     ::testing::InitGoogleTest(&argc, argv);
