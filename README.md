@@ -188,11 +188,17 @@ After that, simply include `cptl.hpp` or `cptl_stl.hpp` and `graphex.hpp` in you
 
 
 ## Development
-The project is still under development and still too early for any usage. 
+The project is still under development and still too early for any usage.
+
+You'll need the following packages:
+1. CMake (>= 3.15) with Ninja build system (1.9.0)
+2. Boost (1.67.0)
+3. benchmark (1.5.0)
+4. GTest (1.8.0)
 
 - To build the tests `./build.sh -b`
-- To run the tests `./build.sh -rt`
-- To run the benchmark `./build.sh -bm`
+- To run the tests `./build.sh -rt` or `./build/graph_test`
+- To run the benchmark `./build.sh -bm` or `./build/bmark`
 
 ### TODO
 - [x] Add concurrency to tasks execution
