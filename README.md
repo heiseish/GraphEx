@@ -182,7 +182,9 @@ EXPECT_EQ(second.Collect(), 8);
 ```
 
 ## Installation
-Simply include `thread_pool.hpp` `graphex.hpp` in your project and make sure build the project with C++17-compatible compiler.
+There are 2 variants of thread pools, one with Boost lockess queue. To use Boost lockless queue version, compile
+your program with `USE_BOOST_LOCKLESS_Q`. Do some benchmarking to see which is more optimal for your process.
+After that, simply include `cptl.hpp` or `cptl_stl.hpp` and `graphex.hpp` in your project and make sure build the project with C++17-compatible compiler.
 
 
 ## Development

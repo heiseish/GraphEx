@@ -20,6 +20,7 @@ find_package(GTest REQUIRED)
 list(APPEND 3RDPARTY_INCLUDE_DIRS "${GTEST_INCLUDE_DIRS}")
 list(APPEND 3RDPARTY_LIBRARIES "${GTEST_BOTH_LIBRARIES}")
 
+find_package(Boost REQUIRED COMPONENTS thread program_options)
 
 file(GLOB_RECURSE test_files
 	"${CMAKE_CURRENT_SOURCE_DIR}/test.cpp"
@@ -33,12 +34,23 @@ target_include_directories(
         PRIVATE
         ${3RDPARTY_INCLUDE_DIRS}
         "{CMAKE_CURRENT_SOURCE_DIR}"
+        "${Boost_INCLUDE_DIR}"
+        "${BOOST_LOCKFREE_DIR}"
 )
 
 target_link_libraries(
     graph_test
         ${3RDPARTY_LIBRARIES}
 )
+
+#[[
+target_compile_definitions(
+    graph_test 
+        PUBLIC 
+        "USE_BOOST_LOCKLESS_Q"
+)
+]]
+
 
 find_package(benchmark REQUIRED)
 add_executable(bmark
@@ -48,7 +60,16 @@ target_include_directories(bmark
     PUBLIC
         "${GOOGLE_BENCHMARK_SRC}/include"
         "{CMAKE_CURRENT_SOURCE_DIR}"
+        "${Boost_INCLUDE_DIR}"
+        "${BOOST_LOCKFREE_DIR}"
 )
+#[[
+target_compile_definitions(
+    bmark 
+        PUBLIC 
+        "USE_BOOST_LOCKLESS_Q"
+)
+]]
 
 target_link_libraries(bmark 
     PUBLIC

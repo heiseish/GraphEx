@@ -12,8 +12,16 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include <queue>
+#include <iostream>
 
-#include "thread_pool.hpp"
+#ifdef USE_BOOST_LOCKLESS_Q
+#include "cptl.hpp"
+#else
+#include "cptl_stl.hpp"
+#endif
+
+
 namespace GE {
 
 #define likely(x) __builtin_expect((x), 1)
@@ -423,7 +431,6 @@ public:
     auto execute() -> void
     {
         // create thread pool with 4 worker threads
-
         std::unordered_set<BaseNode*> processed;
         std::queue<BaseNode*> qu;
 
@@ -436,7 +443,7 @@ public:
         while (!qu.empty()) {
             decltype(auto) nxt = qu.front();
             qu.pop();
-            pool.enqueue(std::bind(&BaseNode::execute, nxt));
+            pool.push(std::bind(&BaseNode::execute, nxt));
             for (auto& next_node : nxt->next_nodes) {
                 if (processed.find(next_node) == processed.end() &&
                     next_node->all_parent_enqueued()) {
@@ -446,11 +453,11 @@ public:
                 }
             }
         }
-        pool.join();
+        pool.stop(true);
     }
 
 private:
-    thread::Executor pool;
+    ctpl::thread_pool pool;
     std::vector<BaseNode*> _input_nodes;
 };
 
@@ -477,6 +484,9 @@ decltype(auto) make_node(std::function<void(void)> func)
     return Node<void>(func);
 }
 
+
 }  // namespace GE
+
+
 
 #endif
