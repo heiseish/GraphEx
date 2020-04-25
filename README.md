@@ -6,7 +6,7 @@
 
 Image Credit [Network Vectors by Vecteezy](https://www.vecteezy.com/free-vector/network)
 
-**A single-file header-only C++17 graph-based execution model for a network of interlinked tasks. Support passing of arguments between each node task.**
+**A header-only C++17 graph-based execution model for a network of interlinked tasks. Support passing of arguments between each node task.**
 
 ## Sample usage:
 
@@ -17,26 +17,22 @@ using namespace GE;
 // below are simple tasks to be run in sequence
 // first ----> second ----> third ----> fourth
 decltype(auto) first =
-    MakeNode([]() -> void { std::cout << "Running first\n"; });
+    make_node([]() -> void { std::cout << "Running first\n"; });
 decltype(auto) second =
-    MakeNode([]() -> void { std::cout << "Running second\n"; });
+    make_node([]() -> void { std::cout << "Running second\n"; });
 decltype(auto) third =
-    MakeNode([]() -> void { std::cout << "Running third\n"; });
+    make_node([]() -> void { std::cout << "Running third\n"; });
 decltype(auto) fourth =
-    MakeNode([]() -> void { std::cout << "Running fourth\n"; });
+    make_node([]() -> void { std::cout << "Running fourth\n"; });
 
-second.SetParent(first);
-fourth.SetParent(first);
-second.SetParent(third);
-fourth.SetParent(third);
-third.SetParent(first);
+second.set_parent(first);
+third.set_parent(second);
+fourth.set_parent(third);
+GraphEx executor(1); // set maximum number of concurrent threads running at the same time
 
-GraphExOptions opt; // set graph runtime option
-GraphEx executor(opt); // create runtime graph
-
-executor.RegisterInputNodes(&first); // register the entry points for the graph. Can be multiple
-EXPECT_FALSE(executor.HasCycle()); // Check if the dependency graph has cycle
-executor.Execute();
+executor.register_input_node(&first); // register the entry points for the graph. Can be multiple
+EXPECT_FALSE(executor.has_cycle()); // Check if the dependency graph has cycle
+executor.execute();
 
 /**
 Running first
@@ -49,41 +45,41 @@ Running fourth
 ### Example with graph with argument passing between nodes
 ```C++
 decltype(auto) first =
-    MakeNode([]() -> void { std::cout << "Running first\n"; });
+    make_node([]() -> void { std::cout << "Running first\n"; });
 
 // create a function that doesn't take in anything and return 1
 std::function<int(void)> second_func = []() -> int {
     std::cout << "Running second\nReturn 1\n";
     return 1;
 };
-decltype(auto) second = MakeNode(second_func);
+decltype(auto) second = make_node(second_func);
 
 // create a function that takes in a number and return number + 2
 std::function<int(int)> third_func = [](int a) -> int {
     std::cout << "Running third\nAdding 2: a + 2 == " << a + 2 << "\n";
     return a + 2;
 };
-decltype(auto) third = MakeNode(third_func);
+decltype(auto) third = make_node(third_func);
 
 std::function<int(int)> fourth_func = [](int a) -> int {
     std::cout << "Running fourth\nMultiplying by 2: a * 2 == " << a * 2
                 << "\n";
     return a * 2;
 };
-decltype(auto) fourth = MakeNode(fourth_func);
+decltype(auto) fourth = make_node(fourth_func);
 
 std::function<int(int, int)> fifth_func = [](int a, int b) -> int {
     std::cout << "Running fifth\nModding the two numbers: a % b == "
                 << a % b << "\n";
     return a % b;
 };
-decltype(auto) fifth = MakeNode(fifth_func);
+decltype(auto) fifth = make_node(fifth_func);
 
-second.SetParent(first);
-third.SetParent<0>(second);
-fourth.SetParent<0>(second);
-fifth.SetParent<0>(third);
-fifth.SetParent<1>(fourth);
+second.set_parent(first);
+third.set_parent<0>(second);
+fourth.set_parent<0>(second);
+fifth.set_parent<0>(third);
+fifth.set_parent<1>(fourth);
 
 // The data flow in graph above can be visualize as followed:
 //        void           int                  int
@@ -92,15 +88,15 @@ fifth.SetParent<1>(fourth);
 //                 ------------>   fourth  -------------->
 GraphExOptions opt;
 GraphEx executor(opt);
-executor.RegisterInputNodes(&first);
-EXPECT_FALSE(executor.HasCycle());
+executor.register_input_node(&first);
+EXPECT_FALSE(executor.has_cycle());
 
 /// mark the nodes as output to confirm the results later
 third.MarkAsOutput();
 fourth.MarkAsOutput();
 fifth.MarkAsOutput();
 
-executor.Execute();
+executor.execute();
 // Check the result obtained from the nodes
 EXPECT_EQ(third.Collect(), 3);
 EXPECT_EQ(fourth.Collect(), 2);
@@ -122,21 +118,20 @@ Modding the two numbers: a % b == 1
 ### Check if a dependency graph has cycle
 ```C++
 decltype(auto) first =
-    MakeNode([]() -> void { std::cout << "Running first\n"; });
+    make_node([]() -> void { std::cout << "Running first\n"; });
 decltype(auto) second =
-    MakeNode([]() -> void { std::cout << "Running second\n"; });
+    make_node([]() -> void { std::cout << "Running second\n"; });
 decltype(auto) third =
-    MakeNode([]() -> void { std::cout << "Running third\n"; });
+    make_node([]() -> void { std::cout << "Running third\n"; });
 decltype(auto) fourth =
-    MakeNode([]() -> void { std::cout << "Running fourth\n"; });
-second.SetParent(first);
-third.SetParent(second);
-fourth.SetParent(third);
-first.SetParent(fourth);
-GraphExOptions opt;
-GraphEx executor(opt);
-executor.RegisterInputNodes(&first);
-EXPECT_TRUE(executor.HasCycle()); // 1 -> 2 -> 3 -> 4 -> 1
+    make_node([]() -> void { std::cout << "Running fourth\n"; });
+second.set_parent(first);
+third.set_parent(second);
+fourth.set_parent(third);
+first.set_parent(fourth);
+GraphEx executor;
+executor.register_input_node(&first);
+EXPECT_TRUE(executor.has_cycle()); // 1 -> 2 -> 3 -> 4 -> 1
 ```
 
 ### Usable with a wide range of `ReturnType`
@@ -145,19 +140,18 @@ using NonCopyableType = std::unique_ptr<int>;
 std::function<NonCopyableType()> first_func = []() -> NonCopyableType {
     return std::make_unique<int>(10);
 };
-decltype(auto) first = MakeNode(first_func);
+decltype(auto) first = make_node(first_func);
 std::function<NonCopyableType(NonCopyableType)> second_func =
     [](NonCopyableType a) -> NonCopyableType {
     *a = 6;
     return a;
 };
-decltype(auto) second = MakeNode(second_func);
-second.SetParent<0>(first);
+decltype(auto) second = make_node(second_func);
+second.set_parent<0>(first);
 second.MarkAsOutput();
-GraphExOptions opt;
-GraphEx executor(opt);
-executor.RegisterInputNodes(&first);
-executor.Execute();
+GraphEx executor;
+executor.register_input_node(&first);
+executor.execute();
 std::cout << "Done running\n";
 auto final_output = second.Collect();
 EXPECT_EQ(*final_output, 6);
@@ -172,35 +166,35 @@ struct Foo {
 
 Foo foo;
 std::function<int(void)> first_func = std::bind(&Foo::first, &foo);
-decltype(auto) first = MakeNode(first_func);
+decltype(auto) first = make_node(first_func);
 
 std::function<int(int)> second_func =
     std::bind(&Foo::second, &foo, std::placeholders::_1);
-decltype(auto) second = MakeNode(second_func);
+decltype(auto) second = make_node(second_func);
 
-second.SetParent<0>(first);
+second.set_parent<0>(first);
 second.MarkAsOutput();
-GraphExOptions opt;
-GraphEx executor(opt);
-executor.RegisterInputNodes(&first);
-executor.Execute();
+GraphEx executor;
+executor.register_input_node(&first);
+executor.execute();
 
 EXPECT_EQ(second.Collect(), 8);
 ```
 
 ## Installation
-Simply include `graphex.hpp` in your project and make sure build the project with C++17-compatible compiler.
+Simply include `thread_pool.hpp` `graphex.hpp` in your project and make sure build the project with C++17-compatible compiler.
 
 
 ## Development
 The project is still under development and still too early for any usage. 
 
-To build the tests `./build.sh -b`
-
-To run the tests `./build.sh -rt`
+- To build the tests `./build.sh -b`
+- To run the tests `./build.sh -rt`
+- To run the benchmark `./build.sh -bm`
 
 ### TODO
-- [ ] Add concurrency to tasks execution
+- [x] Add concurrency to tasks execution
+- [ ] Optimize further
 
 ## Contribute
 ### Current contributors

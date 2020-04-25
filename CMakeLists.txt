@@ -32,6 +32,7 @@ target_include_directories(
     graph_test
         PRIVATE
         ${3RDPARTY_INCLUDE_DIRS}
+        "{CMAKE_CURRENT_SOURCE_DIR}"
 )
 
 target_link_libraries(
@@ -39,37 +40,17 @@ target_link_libraries(
         ${3RDPARTY_LIBRARIES}
 )
 
-# --- benchmark binary ---
-#[[
-set(BENCHMARK_ENABLE_GTEST_TESTS OFF)
-set(CMAKE_BUILD_TYPE Release)
-set(BENCHMARK_ENABLE_LTO true)
-set(BENCHMARK_ENABLE_GTEST_TESTS OFF)
-set(GOOGLE_BENCHMARK_SRC ${CMAKE_SOURCE_DIR}/3rdparty/benchmark)
-add_subdirectory(${GOOGLE_BENCHMARK_SRC})
-add_executable(dawn_benchmark 
-   ${CMAKE_SOURCE_DIR}/benchmark/main.cpp
-   ${src_files}
+find_package(benchmark REQUIRED)
+add_executable(bmark
+   ${CMAKE_SOURCE_DIR}/benchmark.cpp
 )
-target_include_directories(dawn_benchmark 
+target_include_directories(bmark 
     PUBLIC
         "${GOOGLE_BENCHMARK_SRC}/include"
-        ${3RDPARTY_INCLUDE_DIRS}
-        ${CMAKE_SOURCE_DIR}/src
+        "{CMAKE_CURRENT_SOURCE_DIR}"
 )
-target_compile_definitions(
-    dawn_benchmark 
-        PUBLIC 
-        ${COMPILE_DEFINITIONS}
-)
-target_link_directories(
-    dawn_benchmark
-        PUBLIC
-        ${CMAKE_BINARY_DIR}
-)
-target_link_libraries(dawn_benchmark 
+
+target_link_libraries(bmark 
     PUBLIC
         benchmark::benchmark
-        ${3RDPARTY_LIBRARIES}
 )
-]]

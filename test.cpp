@@ -9,23 +9,22 @@ class GraphExTest : public ::testing::Test {
 TEST_F(GraphExTest, ShouldBeAbleToRunSimpleChainGraph)
 {
     decltype(auto) first =
-        MakeNode([]() -> void { std::cout << "Running first\n"; });
+        make_node([]() -> void { std::cout << "Running first\n"; });
     decltype(auto) second =
-        MakeNode([]() -> void { std::cout << "Running second\n"; });
+        make_node([]() -> void { std::cout << "Running second\n"; });
     decltype(auto) third =
-        MakeNode([]() -> void { std::cout << "Running third\n"; });
+        make_node([]() -> void { std::cout << "Running third\n"; });
     decltype(auto) fourth =
-        MakeNode([]() -> void { std::cout << "Running fourth\n"; });
-    second.SetParent(first);
-    fourth.SetParent(first);
-    second.SetParent(third);
-    fourth.SetParent(third);
-    third.SetParent(first);
-    GraphExOptions opt;
-    GraphEx executor(opt);
-    executor.RegisterInputNodes(&first);
-    EXPECT_FALSE(executor.HasCycle());
-    executor.Execute();
+        make_node([]() -> void { std::cout << "Running fourth\n"; });
+    second.set_parent(first);
+    fourth.set_parent(first);
+    second.set_parent(third);
+    fourth.set_parent(third);
+    third.set_parent(first);
+    GraphEx executor;
+    executor.register_input_node(&first);
+    EXPECT_FALSE(executor.has_cycle());
+    executor.execute();
 
     /**
     Running first
@@ -38,15 +37,14 @@ TEST_F(GraphExTest, ShouldBeAbleToRunSimpleChainGraph)
 TEST_F(GraphExTest, ShouldBeAbleToRunSimpleChainGraph2)
 {
     std::function<int(void)> first_func = []() -> int { return 1; };
-    decltype(auto) first = MakeNode(first_func);
+    decltype(auto) first = make_node(first_func);
     decltype(auto) second =
-        MakeNode([]() -> void { std::cout << "Running second\n"; });
-    second.SetParent(first);
-    GraphExOptions opt;
-    GraphEx executor(opt);
-    executor.RegisterInputNodes(&first);
-    EXPECT_FALSE(executor.HasCycle());
-    executor.Execute();
+        make_node([]() -> void { std::cout << "Running second\n"; });
+    second.set_parent(first);
+    GraphEx executor;
+    executor.register_input_node(&first);
+    EXPECT_FALSE(executor.has_cycle());
+    executor.execute();
     /**
     Running first
     Running third
@@ -58,15 +56,15 @@ TEST_F(GraphExTest, ShouldBeAbleToRunSimpleChainGraph2)
 TEST_F(GraphExTest, ShouldBeAbleToRunSimpleGraphWithArgumentPassing)
 {
     decltype(auto) first =
-        MakeNode([]() -> void { std::cout << "Running first\n"; });
+        make_node([]() -> void { std::cout << "Running first\n"; });
 
     // Need to explicitly set this one or compiler wont be able to deduce
-    // whether this is MakeNode<void, Args..> or MakeNode<ReturnType, ...>
+    // whether this is make_node<void, Args..> or make_node<ReturnType, ...>
     std::function<int(void)> second_func = []() -> int {
         std::cout << "Running second\nReturn 1\n";
         return 1;
     };
-    decltype(auto) second = MakeNode(second_func);
+    decltype(auto) second = make_node(second_func);
 
     // Need to explicitly create std::function, seems like
     // template is unable to deduce the type of lambda
@@ -74,7 +72,7 @@ TEST_F(GraphExTest, ShouldBeAbleToRunSimpleGraphWithArgumentPassing)
         std::cout << "Running third\nAdding 2: a + 2 == " << a + 2 << "\n";
         return a + 2;
     };
-    decltype(auto) third = MakeNode(third_func);
+    decltype(auto) third = make_node(third_func);
 
     // same as above
     std::function<int(int)> fourth_func = [](int a) -> int {
@@ -82,28 +80,27 @@ TEST_F(GraphExTest, ShouldBeAbleToRunSimpleGraphWithArgumentPassing)
                   << "\n";
         return a * 2;
     };
-    decltype(auto) fourth = MakeNode(fourth_func);
+    decltype(auto) fourth = make_node(fourth_func);
 
     std::function<int(int, int)> fifth_func = [](int a, int b) -> int {
         std::cout << "Running fifth\nModding the two numbers: a % b == "
                   << a % b << "\n";
         return a % b;
     };
-    decltype(auto) fifth = MakeNode(fifth_func);
+    decltype(auto) fifth = make_node(fifth_func);
 
-    second.SetParent(first);
-    third.SetParent<0>(second);
-    fourth.SetParent<0>(second);
-    fifth.SetParent<0>(third);
-    fifth.SetParent<1>(fourth);
-    GraphExOptions opt;
-    GraphEx executor(opt);
-    executor.RegisterInputNodes(&first);
-    EXPECT_FALSE(executor.HasCycle());
-    executor.Execute();
-    EXPECT_EQ(third.Collect(), 3);
-    EXPECT_EQ(fourth.Collect(), 2);
-    EXPECT_EQ(fifth.Collect(), 1);
+    second.set_parent(first);
+    third.set_parent<0>(second);
+    fourth.set_parent<0>(second);
+    fifth.set_parent<0>(third);
+    fifth.set_parent<1>(fourth);
+    GraphEx executor;
+    executor.register_input_node(&first);
+    EXPECT_FALSE(executor.has_cycle());
+    executor.execute();
+    EXPECT_EQ(third.collect(), 3);
+    EXPECT_EQ(fourth.collect(), 2);
+    EXPECT_EQ(fifth.collect(), 1);
     /**
     Running first
     Running second
@@ -120,24 +117,23 @@ TEST_F(GraphExTest, ShouldBeAbleToRunSimpleGraphWithArgumentPassing)
 TEST_F(GraphExTest, CheckGraphHasCycle)
 {
     decltype(auto) first =
-        MakeNode([]() -> void { std::cout << "Running first\n"; });
+        make_node([]() -> void { std::cout << "Running first\n"; });
     decltype(auto) second =
-        MakeNode([]() -> void { std::cout << "Running second\n"; });
+        make_node([]() -> void { std::cout << "Running second\n"; });
     decltype(auto) third =
-        MakeNode([]() -> void { std::cout << "Running third\n"; });
+        make_node([]() -> void { std::cout << "Running third\n"; });
     decltype(auto) fourth =
-        MakeNode([]() -> void { std::cout << "Running fourth\n"; });
-    second.SetParent(first);
-    third.SetParent(second);
-    fourth.SetParent(third);
-    first.SetParent(fourth);
-    GraphExOptions opt;
-    GraphEx executor(opt);
-    executor.RegisterInputNodes(&first);
-    EXPECT_TRUE(executor.HasCycle());
+        make_node([]() -> void { std::cout << "Running fourth\n"; });
+    second.set_parent(first);
+    third.set_parent(second);
+    fourth.set_parent(third);
+    first.set_parent(fourth);
+    GraphEx executor;
+    executor.register_input_node(&first);
+    EXPECT_TRUE(executor.has_cycle());
 }
 
-TEST_F(GraphExTest, OptimizePassingArgumentByMoving)
+TEST_F(GraphExTest, ShouldBeAbleToHandleMovableObjectCorrectly)
 {
     struct MyMoveable {
         int i = 1;
@@ -146,62 +142,52 @@ TEST_F(GraphExTest, OptimizePassingArgumentByMoving)
 
     {
         decltype(auto) preprocess =
-            MakeNode([]() -> void { std::cout << "Running preprocessing\n"; });
+            make_node([]() -> void { std::cout << "Running preprocessing\n"; });
 
         std::function<MyMoveable()> first_func = []() -> MyMoveable {
             return {};
         };
-        decltype(auto) first = MakeNode(first_func);
+        decltype(auto) first = make_node(first_func);
         std::function<MyMoveable(MyMoveable)> second_func =
             [](MyMoveable a) -> MyMoveable {
             a.rand_str = "oh shit";
             return a;
         };
-        decltype(auto) second = MakeNode(second_func);
-        second.SetParent(preprocess);
-        second.SetParent<0>(first);
-        second.MarkAsOutput();
-        GraphExOptions opt;
-        GraphEx executor(opt);
-        executor.RegisterInputNodes(&first);
-        executor.RegisterInputNodes(&preprocess);
-        executor.Execute();
-        try {
-            // first MakeNode is not marked output during execution so the
-            // result from first func is not kept but moved to second func
-            auto initial_input = first.Collect();
-            FAIL() << "Expected std::runtime_error";
-        }
-        catch (const std::runtime_error& err) {
-            EXPECT_EQ(err.what(), std::string("No result found in node"));
-        }
+        decltype(auto) second = make_node(second_func);
+        second.set_parent(preprocess);
+        second.set_parent<0>(first);
+        second.mark_as_output();
+        GraphEx executor;
+        executor.register_input_node(&first);
+        executor.register_input_node(&preprocess);
+        executor.execute();
+        auto initial_input = first.collect();
     }
 
     {
         decltype(auto) preprocess =
-            MakeNode([]() -> void { std::cout << "Running preprocessing\n"; });
+            make_node([]() -> void { std::cout << "Running preprocessing\n"; });
         std::function<MyMoveable()> first_func = []() -> MyMoveable {
             return {};
         };
-        decltype(auto) first = MakeNode(first_func);
+        decltype(auto) first = make_node(first_func);
         std::function<MyMoveable(MyMoveable)> second_func =
             [](MyMoveable a) -> MyMoveable {
             a.rand_str = "just updated";
             return a;
         };
-        decltype(auto) second = MakeNode(second_func);
-        second.SetParent(preprocess);
-        second.SetParent<0>(first);
-        second.MarkAsOutput();
-        first.MarkAsOutput();
-        GraphExOptions opt;
-        GraphEx executor(opt);
-        executor.RegisterInputNodes(&first);
-        executor.RegisterInputNodes(&preprocess);
-        executor.Execute();
-        auto final_output = second.Collect();
+        decltype(auto) second = make_node(second_func);
+        second.set_parent(preprocess);
+        second.set_parent<0>(first);
+        second.mark_as_output();
+        first.mark_as_output();
+        GraphEx executor;
+        executor.register_input_node(&first);
+        executor.register_input_node(&preprocess);
+        executor.execute();
+        auto final_output = second.collect();
         EXPECT_EQ(final_output.rand_str, "just updated");
-        auto initial_input = first.Collect();
+        auto initial_input = first.collect();
         EXPECT_EQ(initial_input.rand_str, "hello universe");
     }
 }
@@ -212,28 +198,27 @@ TEST_F(GraphExTest, ShouldBeAbleToHandleNonCopyableStruct)
     std::function<NonCopyableType()> first_func = []() -> NonCopyableType {
         return std::make_unique<int>(10);
     };
-    decltype(auto) first = MakeNode(first_func);
+    decltype(auto) first = make_node(first_func);
     std::function<NonCopyableType(NonCopyableType)> second_func =
         [](NonCopyableType a) -> NonCopyableType {
         *a = 6;
         return a;
     };
-    decltype(auto) second = MakeNode(second_func);
-    second.SetParent<0>(first);
-    second.MarkAsOutput();
-    GraphExOptions opt;
-    GraphEx executor(opt);
-    executor.RegisterInputNodes(&first);
-    executor.Execute();
+    decltype(auto) second = make_node(second_func);
+    second.set_parent<0>(first);
+    second.mark_as_output();
+    GraphEx executor;
+    executor.register_input_node(&first);
+    executor.execute();
     std::cout << "Done running\n";
     try {
-        auto initial_input = first.Collect();
+        auto initial_input = first.collect();
         FAIL() << "Expected std::runtime_error";
     }
     catch (const std::runtime_error& err) {
         EXPECT_EQ(err.what(), std::string("No result found in node"));
     }
-    auto final_output = second.Collect();
+    auto final_output = second.collect();
     EXPECT_EQ(*final_output, 6);
 }
 
@@ -243,24 +228,24 @@ TEST_F(GraphExTest, ShouldThrowIfNonCopyableObjectIsPassedToMoreThanOneChild)
     std::function<NonCopyableType()> first_func = []() -> NonCopyableType {
         return std::make_unique<int>(10);
     };
-    decltype(auto) first = MakeNode(first_func);
+    decltype(auto) first = make_node(first_func);
 
     std::function<NonCopyableType(NonCopyableType)> second_func =
         [](NonCopyableType a) -> NonCopyableType {
         *a = 6;
         return a;
     };
-    decltype(auto) second = MakeNode(second_func);
+    decltype(auto) second = make_node(second_func);
 
     std::function<NonCopyableType(NonCopyableType)> third_func =
         [](NonCopyableType a) -> NonCopyableType {
         *a = 9;
         return a;
     };
-    decltype(auto) third = MakeNode(third_func);
-    second.SetParent<0>(first);
+    decltype(auto) third = make_node(third_func);
+    second.set_parent<0>(first);
     try {
-        third.SetParent<0>(first);
+        third.set_parent<0>(first);
         FAIL() << "Expected std::runtime_error";
     }
     catch (const std::logic_error& err) {
@@ -279,20 +264,119 @@ TEST_F(GraphExTest, ShouldBeAbleToAddStructMethod)
 
     Foo foo;
     std::function<int(void)> first_func = std::bind(&Foo::first, &foo);
-    decltype(auto) first = MakeNode(first_func);
+    decltype(auto) first = make_node(first_func);
 
     std::function<int(int)> second_func =
         std::bind(&Foo::second, &foo, std::placeholders::_1);
-    decltype(auto) second = MakeNode(second_func);
+    decltype(auto) second = make_node(second_func);
 
-    second.SetParent<0>(first);
-    second.MarkAsOutput();
-    GraphExOptions opt;
-    GraphEx executor(opt);
-    executor.RegisterInputNodes(&first);
-    executor.Execute();
+    second.set_parent<0>(first);
+    second.mark_as_output();
+    GraphEx executor;
+    executor.register_input_node(&first);
+    executor.execute();
 
-    EXPECT_EQ(second.Collect(), 8);
+    EXPECT_EQ(second.collect(), 8);
+}
+
+TEST_F(GraphExTest, ShouldBeAbleToRunConcurrentlyCorrectly)
+{
+    int one_thread_result = -1, two_thread_result = -2, four_thread_result = -4,
+        eight_thread_result = -8;
+    std::function<void(void)> first_func = []() -> void {};
+    std::function<int(void)> second_func = []() -> int { return 1; };
+    std::function<int(int)> third_func = [](int a) -> int { return a + 2; };
+    std::function<int(int)> fourth_func = [](int a) -> int { return a * 2; };
+    std::function<int(int, int)> fifth_func = [](int a, int b) -> int {
+        return a % b;
+    };
+
+    {  // 1 thread
+        decltype(auto) first = make_node(first_func);
+        decltype(auto) second = make_node(second_func);
+        decltype(auto) third = make_node(third_func);
+        decltype(auto) fourth = make_node(fourth_func);
+        decltype(auto) fifth = make_node(fifth_func);
+
+        second.set_parent(first);
+        third.set_parent<0>(second);
+        fourth.set_parent<0>(second);
+        fifth.set_parent<0>(third);
+        fifth.set_parent<1>(fourth);
+        GraphEx executor;
+        executor.register_input_node(&first);
+        EXPECT_FALSE(executor.has_cycle());
+        executor.execute();
+        EXPECT_EQ(third.collect(), 3);
+        EXPECT_EQ(fourth.collect(), 2);
+        one_thread_result = fifth.collect();
+    }
+
+    {  // 2 thread
+        decltype(auto) first = make_node(first_func);
+        decltype(auto) second = make_node(second_func);
+        decltype(auto) third = make_node(third_func);
+        decltype(auto) fourth = make_node(fourth_func);
+        decltype(auto) fifth = make_node(fifth_func);
+
+        second.set_parent(first);
+        third.set_parent<0>(second);
+        fourth.set_parent<0>(second);
+        fifth.set_parent<0>(third);
+        fifth.set_parent<1>(fourth);
+        GraphEx executor(2);
+        executor.register_input_node(&first);
+        EXPECT_FALSE(executor.has_cycle());
+        executor.execute();
+        EXPECT_EQ(third.collect(), 3);
+        EXPECT_EQ(fourth.collect(), 2);
+        two_thread_result = fifth.collect();
+    }
+
+    {  // 4 thread
+        decltype(auto) first = make_node(first_func);
+        decltype(auto) second = make_node(second_func);
+        decltype(auto) third = make_node(third_func);
+        decltype(auto) fourth = make_node(fourth_func);
+        decltype(auto) fifth = make_node(fifth_func);
+
+        second.set_parent(first);
+        third.set_parent<0>(second);
+        fourth.set_parent<0>(second);
+        fifth.set_parent<0>(third);
+        fifth.set_parent<1>(fourth);
+        GraphEx executor(4);
+        executor.register_input_node(&first);
+        EXPECT_FALSE(executor.has_cycle());
+        executor.execute();
+        EXPECT_EQ(third.collect(), 3);
+        EXPECT_EQ(fourth.collect(), 2);
+        four_thread_result = fifth.collect();
+    }
+
+    {  // 8 thread
+        decltype(auto) first = make_node(first_func);
+        decltype(auto) second = make_node(second_func);
+        decltype(auto) third = make_node(third_func);
+        decltype(auto) fourth = make_node(fourth_func);
+        decltype(auto) fifth = make_node(fifth_func);
+
+        second.set_parent(first);
+        third.set_parent<0>(second);
+        fourth.set_parent<0>(second);
+        fifth.set_parent<0>(third);
+        fifth.set_parent<1>(fourth);
+        GraphEx executor(8);
+        executor.register_input_node(&first);
+        EXPECT_FALSE(executor.has_cycle());
+        executor.execute();
+        EXPECT_EQ(third.collect(), 3);
+        EXPECT_EQ(fourth.collect(), 2);
+        eight_thread_result = fifth.collect();
+    }
+    EXPECT_EQ(one_thread_result, two_thread_result);
+    EXPECT_EQ(four_thread_result, two_thread_result);
+    EXPECT_EQ(four_thread_result, eight_thread_result);
 }
 
 auto main(int argc, char** argv) -> int

@@ -20,7 +20,10 @@ case $key in
     ;;
     -f|--format)
     echo "Formatting the code"
-    find ./ -iname *.hpp -o -iname *.cpp | xargs clang-format -i
+    # clang-format -i test.cpp
+    # clang-format -i benchmark.cpp
+    # clang-format -i graphex.hpp
+    find ./ -iname "*.hpp" -o -iname "*.cpp" | xargs clang-format -i
     shift # past argument
     shift # past value
     ;;
@@ -48,7 +51,7 @@ case $key in
     -bm)
     echo "Running the benchmark"
     set -a # automatically export all variables
-    source .env && cd build && ./dawn_benchmark
+    cd build && ./bmark
     set +a
     shift # past argument
     shift # past value
