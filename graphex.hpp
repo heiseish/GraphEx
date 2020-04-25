@@ -21,7 +21,6 @@
 #include "cptl_stl.hpp"
 #endif
 
-
 namespace GE {
 
 #define likely(x) __builtin_expect((x), 1)
@@ -33,22 +32,23 @@ namespace GE {
 
 class BaseNode {
 public:
-    virtual auto execute() -> void = 0;
+    virtual void execute() = 0;
 
-    /// @brief mark_as_output mark the node as output node and preserve the
-    /// value returned by the job function. If a node is not marked as output
+    /// @brief markAsOutput mark the node as output node and preserve the
+    /// value returned by the _task function. If a node is not marked as output
     /// node, there is no guarantee The result retrieved from the node is valid
-    virtual auto mark_as_output() -> void { _is_output = true; }
+    virtual void markAsOutput() { _isOutput = true; }
 
-    virtual auto all_parent_enqueued() -> bool { return false; }
-    virtual auto parent_enqueued() -> void = 0;
-    virtual auto reset() -> void = 0;
-    /// next_nodes contains the child nodes for current node. Those are nodes
-    /// which are signal upon the completion of the job in current nnode
-    std::vector<BaseNode*> next_nodes, parents;
+    virtual bool allParentEnqueued() { return false; }
+    virtual void parentEnqueued() = 0;
+    virtual void reset() = 0;
+
+    /// _nextNodes contains the child nodes for current node. Those are nodes
+    /// which are signal upon the completion of the _task in current nnode
+    std::vector<BaseNode*> _nextNodes;
 
 protected:
-    bool _is_output = false;
+    bool _isOutput = false;
 };
 
 template <typename ReturnType, typename... Args>
@@ -56,17 +56,17 @@ class Node final : public BaseNode {
     friend class GraphEx;
 
 public:
-    using JobCallback = std::function<ReturnType(Args...)>;
+    using TaskCallback = std::function<ReturnType(Args...)>;
     using SubscribeCallback = std::function<void(ReturnType)>;
     using SubscribeNoArgCallback = std::function<void(void)>;
 
-    Node(JobCallback j) : job(j) {}
+    Node(TaskCallback task) : _task(task) {}
 
-    /// @brief set_parent add a node as a prequel to current node, and the
+    /// @brief setParent add a node as a prequel to current node, and the
     /// result of parent node will be passed or consumed by current node once
-    /// the parent node job is done
+    /// the parent node _task is done
     /// @param idx template argument of the position of result object in current
-    /// node's `args` For example, let's say there are 3 functions, whose
+    /// node's `_args` For example, let's say there are 3 functions, whose
     /// signatures as followed
     /// ```
     /// a = []() -> int {}
@@ -74,75 +74,77 @@ public:
     /// c = [](int x, int y) -> int {}
     /// ```
     /// We need to know whether the result returned by a is passed as `x` or `y`
-    /// to c. Using `set_parent`, we can specify by
+    /// to c. Using `setParent`, we can specify by
     /// ```
-    /// nodeC->set_parent<0>(*nodeA) // if result by a is passed as x or
-    /// nodeC->set_parent<1>(*nodeA) // if result by a is passed as y or
+    /// nodeC->setParent<0>(*nodeA) // if result by a is passed as x or
+    /// nodeC->setParent<1>(*nodeA) // if result by a is passed as y or
     /// ```
     /// @param parent parent node to be added
     template <std::size_t idx, typename ParentTask>
-    auto set_parent(ParentTask& parent) -> void
+    void setParent(ParentTask& parent)
     {
-        this->parents.emplace_back(&parent);
-        parent.add_child(std::bind(&Node::on_argument_ready<idx>, this,
-                                   std::placeholders::_1));
-        parent.next_nodes.emplace_back(this);
+        parent.addChild(
+            std::bind(&Node::onArgumentReady<idx>, this,
+                std::placeholders::_1
+                )
+            );
+        parent._nextNodes.emplace_back(this);
     }
 
-    /// @brief set_parent add a node as a prequel to current node. The parent
+    /// @brief setParent add a node as a prequel to current node. The parent
     /// won't be passing any result needed by current node, but it still
-    /// requires the parent node job to run first before running. For example,
+    /// requires the parent node _task to run first before running. For example,
     /// ```
     /// a = []() -> int {}
     /// b = []() -> int {}
-    /// nodeA->set_parent(*nodeB);
+    /// nodeA->setParent(*nodeB);
     /// ```
     /// @param parent parent node to be added
     template <typename ParentTask>
-    auto set_parent(ParentTask& parent) -> void
+    void setParent(ParentTask& parent)
     {
-        add_parent_count();
-        this->parents.emplace_back(&parent);
+        addParentCount();
         SubscribeNoArgCallback cb = std::bind(
-            static_cast<void (Node::*)(void)>(&Node::on_argument_ready), this);
-        parent.add_child(cb);
-        parent.next_nodes.emplace_back(this);
+            static_cast<void (Node::*)(void)>(&Node::onArgumentReady),
+            this
+            );
+        parent.addChild(cb);
+        parent._nextNodes.emplace_back(this);
     }
 
-    /// @brief Run the main job registered by current node
-    /// After the job is finish, call the registered callback functions
+    /// @brief Run the main _task registered by current node
+    /// After the _task is finish, call the registered callback functions
     /// @throw if `ReturnType` is non-copyable but there are more than 1 child
     /// tasks that require the result object
-    auto execute() -> void override
+    void execute() override
     {
         // wait for result to be ready
-        while (pendingCount > 0)
-            ;
+        while (_pendingCount > 0) ;
         if constexpr (!std::is_copy_constructible<ReturnType>::value) {
-            DE_ENFORCE(child_tasks.size() <= 1,
+            DE_ENFORCE(_childTasks.size() <= 1,
                        "Internal Error: More than 1 child process for "
                        "non-copyable object");
-            _result = std::apply(job, std::move(args));
+            _result = std::apply(_task, std::move(_args));
             _validResult = true;
-            if (!child_tasks.empty()) {
-                child_tasks[0](std::move(_result.value()));
+            if (!_childTasks.empty()) {
+                _childTasks[0](std::move(_result.value()));
                 _validResult = false;
             }
         }
         else {
-            _result = std::apply(job, args);
+            _result = std::apply(_task, _args);
             _validResult = true;
-            for (size_t i = 0; i < child_tasks.size(); ++i) {
-                child_tasks[i](_result.value());
+            for (size_t i = 0; i < _childTasks.size(); ++i) {
+                _childTasks[i](_result.value());
             }
         }
-        for (auto childTask : no_arg_child_tasks) childTask();
+        for (auto childTask : _noArgChildTasks) childTask();
     }
 
-    /// @brief Retrieve the result obtained by the current node job
+    /// @brief Retrieve the result obtained by the current node _task
     /// @throw std::runtime_error if No valid result can be retrieved in the
     /// node
-    auto collect() -> ReturnType
+    ReturnType collect()
     {
         if (!_validResult) {
             throw std::runtime_error("No result found in node");
@@ -155,81 +157,79 @@ public:
         }
     }
 
-    /// @brief Add a callback function that will be called when the job in
-    /// current node finished running. The object generated by the job in thise
+    /// @brief Add a callback function that will be called when the _task in
+    /// current node finished running. The object generated by the _task in thise
     /// node will be passed to or consumed by the callback function `child`
     /// @param child callback function
-    auto add_child(SubscribeCallback child) -> void
+    void addChild(SubscribeCallback child)
     {
         if constexpr (!std::is_copy_constructible<ReturnType>::value) {
-            if (child_tasks.size() > 0) {
+            if (_childTasks.size() > 0) {
                 throw std::logic_error(
                     "Non copyable result cannot be passed to more than 1 child "
                     "process");
             }
-            if (_is_output) {
+            if (_isOutput) {
                 throw std::logic_error(
                     "Non copyable result which has been marked as output "
                     "cannot have children");
             }
         }
-        child_tasks.push_back(child);
+        _childTasks.push_back(child);
     }
 
-    /// @brief Add a callback function that will be called when the job in
+    /// @brief Add a callback function that will be called when the _task in
     /// current node finished running. No argument will be passed to the
     /// callback function
     /// @param child callback function
-    auto add_child(SubscribeNoArgCallback child) -> void
+    void addChild(SubscribeNoArgCallback child)
     {
-        no_arg_child_tasks.push_back(child);
+        _noArgChildTasks.push_back(child);
     }
 
 private:
-    virtual auto parent_enqueued() -> void override { ++parentEnqueued; }
-    virtual auto all_parent_enqueued() -> bool override
+    virtual void parentEnqueued() override { ++_parentEnqueued; }
+    virtual bool allParentEnqueued() override
     {
-        return parentEnqueued == parentCount;
+        return _parentEnqueued == _parentCount;
     }
-    auto add_parent_count() -> void
+    void addParentCount()
     {
-        ++parentCount;
-        ++pendingCount;
+        ++_parentCount;
+        ++_pendingCount;
     }
-    virtual auto reset() -> void override
+    virtual void reset() override
     {
         _result.reset();
-        pendingCount = parentCount;
-        parentEnqueued = 0;
+        _pendingCount = _parentCount;
+        _parentEnqueued = 0;
     }
     /// @brief A register function that can be used to register callback when
     /// parent nodes have finish running
     template <std::size_t idx>
-    auto on_argument_ready(decltype(
-        std::get<idx>(std::declval<std::tuple<Args...>>())) arg) -> void
+    void onArgumentReady(decltype(std::get<idx>(std::declval<std::tuple<Args...>>())) arg)
     {
         if constexpr (!std::is_copy_constructible<decltype(arg)>::value) {
-            std::get<idx>(args) = std::move(arg);
+            std::get<idx>(_args) = std::move(arg);
         }
         else
-            std::get<idx>(args) = arg;
-        --pendingCount;
+            std::get<idx>(_args) = arg;
+        --_pendingCount;
     }
 
-    auto on_argument_ready() -> void { --pendingCount; }
+    void onArgumentReady() { --_pendingCount; }
 
-    JobCallback job;
-    std::tuple<Args...> args;
+    TaskCallback _task;
+    std::tuple<Args...> _args;
     bool _validResult = false;
     std::optional<ReturnType> _result;
 
-    size_t parentEnqueued = 0;
-    std::atomic<size_t> pendingCount =
-        std::tuple_size<std::tuple<Args...>>::value;
-    size_t parentCount = std::tuple_size<std::tuple<Args...>>::value;
+    size_t _parentEnqueued = 0;
+    std::atomic<size_t> _pendingCount = std::tuple_size<std::tuple<Args...>>::value;
+    size_t _parentCount = std::tuple_size<std::tuple<Args...>>::value;
 
-    std::vector<SubscribeCallback> child_tasks;
-    std::vector<SubscribeNoArgCallback> no_arg_child_tasks;
+    std::vector<SubscribeCallback> _childTasks;
+    std::vector<SubscribeNoArgCallback> _noArgChildTasks;
 };
 
 template <typename... Args>
@@ -237,16 +237,16 @@ class Node<void, Args...> final : public BaseNode {
     friend class GraphEx;
 
 public:
-    using JobCallback = std::function<void(Args...)>;
+    using TaskCallback = std::function<void(Args...)>;
     using SubscribeNoArgCallback = std::function<void(void)>;
 
-    Node(JobCallback j) : job(j) {}
+    Node(TaskCallback task) : _task(task) {}
 
-    /// @brief set_parent add a node as a prequel to current node, and the
+    /// @brief setParent add a node as a prequel to current node, and the
     /// result of parent node will be passed or consumed by current node once
-    /// the parent node job is done
+    /// the parent node _task is done
     /// @param idx template argument of the position of result object in current
-    /// node's `args` For example, let's say there are 3 functions, whose
+    /// node's `_args` For example, let's say there are 3 functions, whose
     /// signatures as followed
     /// ```
     /// a = []() -> int {}
@@ -254,239 +254,232 @@ public:
     /// c = [](int x, int y) -> int {}
     /// ```
     /// We need to know whether the result returned by a is passed as `x` or `y`
-    /// to c. Using `set_parent`, we can specify by
+    /// to c. Using `setParent`, we can specify by
     /// ```
-    /// nodeC->set_parent<0>(*nodeA) // if result by a is passed as x or
-    /// nodeC->set_parent<1>(*nodeA) // if result by a is passed as y
+    /// nodeC->setParent<0>(*nodeA) // if result by a is passed as x or
+    /// nodeC->setParent<1>(*nodeA) // if result by a is passed as y
     /// ```
     /// @param parent parent node to be added
     template <std::size_t idx, typename ParentTask>
-    auto set_parent(ParentTask& parent) -> void
+    void setParent(ParentTask& parent)
     {
-        this->parents.emplace_back(&parent);
-        parent.add_child(std::bind(&Node::on_argument_ready<idx>, this,
+        parent.addChild(std::bind(&Node::onArgumentReady<idx>, this,
                                    std::placeholders::_1));
-        parent.next_nodes.emplace_back(this);
+        parent._nextNodes.emplace_back(this);
     }
 
-    /// @brief set_parent add a node as a prequel to current node. The parent
+    /// @brief setParent add a node as a prequel to current node. The parent
     /// won't be passing any result needed by current node, but it still
-    /// requires the parent node job to run first before running. For example,
+    /// requires the parent node _task to run first before running. For example,
     /// ```
     /// a = []() -> int {}
     /// b = []() -> int {}
-    /// nodeA->set_parent(*nodeB);
+    /// nodeA->setParent(*nodeB);
     /// ```
     /// @param parent parent node to be added
     template <typename ParentTask>
-    auto set_parent(ParentTask& parent) -> void
+    void setParent(ParentTask& parent)
     {
-        this->parents.emplace_back(&parent);
-        add_parent_count();
+        addParentCount();
         SubscribeNoArgCallback cb = std::bind(
-            static_cast<void (Node::*)(void)>(&Node::on_argument_ready), this);
-        parent.add_child(cb);
-        parent.next_nodes.emplace_back(this);
+            static_cast<void (Node::*)(void)>(&Node::onArgumentReady), this);
+        parent.addChild(cb);
+        parent._nextNodes.emplace_back(this);
     }
 
-    /// @brief Run the main job registered by current node
-    /// After the job is finish, call the registered callback functions
-    auto execute() -> void override
+    /// @brief Run the main _task registered by current node
+    /// After the _task is finish, call the registered callback functions
+    void execute() override
     {
-        while (pendingCount > 0)
-            ;
-        if constexpr (!std::is_copy_constructible<decltype(args)>::value) {
-            std::apply(job, std::move(args));
+        while (_pendingCount > 0);
+        if constexpr (!std::is_copy_constructible<decltype(_args)>::value) {
+            std::apply(_task, std::move(_args));
         }
         else
-            std::apply(job, args);
-        for (auto childTask : child_tasks) childTask();
+            std::apply(_task, _args);
+        for (auto childTask : _childTasks) childTask();
     }
 
-    auto collect() -> void {}
+    void collect() {}
 
-    /// @brief Add a callback function that will be called when the job in
-    /// current node finished running. The object generated by the job in thise
+    /// @brief Add a callback function that will be called when the _task in
+    /// current node finished running. The object generated by the _task in thise
     /// node will be passed to or consumed by the callback function `child`
     /// @param child callback function
-    auto add_child(SubscribeNoArgCallback child) -> void
+    void addChild(SubscribeNoArgCallback child)
     {
-        child_tasks.push_back(child);
+        _childTasks.push_back(child);
     }
 
 private:
-    virtual auto parent_enqueued() -> void override { ++parentEnqueued; }
-    virtual auto all_parent_enqueued() -> bool override
+    virtual void parentEnqueued() override { ++_parentEnqueued; }
+    virtual bool allParentEnqueued() override
     {
-        return parentEnqueued == parentCount;
+        return _parentEnqueued == _parentCount;
     }
-    auto add_parent_count() -> void
+    void addParentCount()
     {
-        ++parentCount;
-        ++pendingCount;
+        ++_parentCount;
+        ++_pendingCount;
     }
-    virtual auto reset() -> void override
+    virtual void reset() override
     {
-        pendingCount = parentCount;
-        parentEnqueued = 0;
+        _pendingCount = _parentCount;
+        _parentEnqueued = 0;
     }
     /// @brief A register function that can be used to register callback when
     /// parent nodes have finish running
     template <std::size_t idx>
-    auto on_argument_ready(decltype(
+    auto onArgumentReady(decltype(
         std::get<idx>(std::declval<std::tuple<Args...>>())) arg) -> void
     {
         if constexpr (!std::is_copy_constructible<decltype(arg)>::value) {
-            std::get<idx>(args) = std::move(arg);
+            std::get<idx>(_args) = std::move(arg);
         }
         else
-            std::get<idx>(args) = arg;
-        --pendingCount;
+            std::get<idx>(_args) = arg;
+        --_pendingCount;
     }
 
-    auto on_argument_ready() -> void { --pendingCount; }
-    JobCallback job;
-    std::tuple<Args...> args;
+    void onArgumentReady() { --_pendingCount; }
+    TaskCallback _task;
+    std::tuple<Args...> _args;
 
-    size_t parentEnqueued = 0;
-    std::atomic<size_t> pendingCount =
-        std::tuple_size<std::tuple<Args...>>::value;
-    size_t parentCount = std::tuple_size<std::tuple<Args...>>::value;
+    size_t _parentEnqueued = 0;
+    std::atomic<size_t> _pendingCount = std::tuple_size<std::tuple<Args...>>::value;
+    size_t _parentCount = std::tuple_size<std::tuple<Args...>>::value;
 
-    std::vector<SubscribeNoArgCallback> child_tasks;
+    std::vector<SubscribeNoArgCallback> _childTasks;
 };
 
 class GraphEx {
 public:
-    GraphEx(size_t concurrency = 1) noexcept : pool(concurrency) {}
+    GraphEx(size_t concurrency = 1) noexcept : _pool(concurrency) {}
 
     /// @brief register entry point for the graph
     template <typename ReturnType, typename... Args>
-    auto register_input_node(Node<ReturnType, Args...>* node) -> void
+    void registerInputNode(Node<ReturnType, Args...>* node)
     {
-        _input_nodes.emplace_back(node);
+        _inputNodes.emplace_back(node);
     }
 
     template <typename... Args>
-    auto register_input_node(Node<void, Args...>* node) -> void
+    void registerInputNode(Node<void, Args...>* node)
     {
-        _input_nodes.emplace_back(node);
+        _inputNodes.emplace_back(node);
     }
 
-    auto register_input_node(Node<void>* node) -> void
+    void registerInputNode(Node<void>* node)
     {
-        _input_nodes.emplace_back(node);
+        _inputNodes.emplace_back(node);
     }
 
     /// @brief check for cycle in the graph
     /// assume all the relevant nodes can be checked from input nodes
-    auto has_cycle() -> bool
+    bool hasCycle()
     {
         std::unordered_map<BaseNode*, bool> col;
         std::function<bool(BaseNode*)> dfs =
-            [&](BaseNode* current_node) -> bool {
-            col[current_node] = true;
-            for (auto& next_node : current_node->next_nodes) {
-                if (likely(!col.count(next_node))) {
-                    if (dfs(next_node)) {
+            [&](BaseNode* currentNode) -> bool {
+            col[currentNode] = true;
+            for (auto& nextNode : currentNode->_nextNodes) {
+                if (likely(!col.count(nextNode))) {
+                    if (dfs(nextNode)) {
                         return true;
                     }
                 }
-                else if (unlikely(col[next_node] == true)) {
+                else if (unlikely(col[nextNode] == true)) {
                     return true;
                 }
             }
-            col[current_node] = false;
+            col[currentNode] = false;
             return false;
         };
-        for (auto& input_node : _input_nodes) {
+        for (auto& inputNode : _inputNodes) {
             col.clear();
-            if (dfs(input_node)) {
+            if (dfs(inputNode)) {
                 return true;
             }
         }
         return false;
     }
 
-    auto reset() -> void
+    void reset()
     {
         std::unordered_set<BaseNode*> vis;
         std::function<bool(BaseNode*)> dfs =
-            [&](BaseNode* current_node) -> bool {
-            vis.insert(current_node);
-            current_node->reset();
-            for (auto& next_node : current_node->next_nodes) {
-                if (vis.find(next_node) == vis.end()) {
-                    dfs(next_node);
+            [&](BaseNode* currentNode) -> bool {
+            vis.insert(currentNode);
+            currentNode->reset();
+            for (auto& nextNode : currentNode->_nextNodes) {
+                if (vis.find(nextNode) == vis.end()) {
+                    dfs(nextNode);
                 }
             }
             return false;
         };
-        for (auto& input_node : _input_nodes) {
-            if (vis.find(input_node) == vis.end()) dfs(input_node);
+        for (auto& inputNode : _inputNodes) {
+            if (vis.find(inputNode) == vis.end()) dfs(inputNode);
         }
     }
 
     /// @brief run the graph execution from input nodes
-    auto execute() -> void
+    void execute()
     {
-        // create thread pool with 4 worker threads
+        // create thread _pool with 4 worker threads
         std::unordered_set<BaseNode*> processed;
         std::queue<BaseNode*> qu;
 
-        for (auto& v : _input_nodes) {
+        for (auto& v : _inputNodes) {
             qu.emplace(v);
             processed.emplace(v);
-            for (auto& k : v->next_nodes) k->parent_enqueued();
+            for (auto& k : v->_nextNodes) k->parentEnqueued();
         }
 
         while (!qu.empty()) {
             decltype(auto) nxt = qu.front();
             qu.pop();
-            pool.push(std::bind(&BaseNode::execute, nxt));
-            for (auto& next_node : nxt->next_nodes) {
-                if (processed.find(next_node) == processed.end() &&
-                    next_node->all_parent_enqueued()) {
-                    qu.emplace(next_node);
-                    processed.emplace(next_node);
-                    for (auto& v : next_node->next_nodes) v->parent_enqueued();
+            _pool.push(std::bind(&BaseNode::execute, nxt));
+            for (auto& nextNode : nxt->_nextNodes) {
+                if (processed.find(nextNode) == processed.end() &&
+                    nextNode->allParentEnqueued()) {
+                    qu.emplace(nextNode);
+                    processed.emplace(nextNode);
+                    for (auto& v : nextNode->_nextNodes) v->parentEnqueued();
                 }
             }
         }
-        pool.stop(true);
+        _pool.stop(true);
     }
 
 private:
-    ctpl::thread_pool pool;
-    std::vector<BaseNode*> _input_nodes;
+    ctpl::thread_pool _pool;
+    std::vector<BaseNode*> _inputNodes;
 };
 
 template <typename ReturnType, typename... Args>
-decltype(auto) make_node(std::function<ReturnType(Args...)> func)
+decltype(auto) makeNode(std::function<ReturnType(Args...)> func)
 {
     return Node<ReturnType, Args...>(func);
 }
 
 template <typename... Args>
-decltype(auto) make_node(std::function<void(Args...)> func)
+decltype(auto) makeNode(std::function<void(Args...)> func)
 {
     return Node<void, Args...>(func);
 }
 
 template <typename ReturnType>
-decltype(auto) make_node(std::function<ReturnType(void)> func)
+decltype(auto) makeNode(std::function<ReturnType(void)> func)
 {
     return Node<ReturnType>(func);
 }
 
-decltype(auto) make_node(std::function<void(void)> func)
+decltype(auto) makeNode(std::function<void(void)> func)
 {
     return Node<void>(func);
 }
 
-
 }  // namespace GE
-
-
 
 #endif
