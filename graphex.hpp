@@ -83,7 +83,6 @@ public:
     template <std::size_t idx, typename ParentTask>
     void set_parent(ParentTask& parent)
     {
-        this->parents.emplace_back(&parent);
         parent.add_child(std::bind(&Node::on_argument_ready<idx>, this,
                                    std::placeholders::_1));
         parent.next_nodes.emplace_back(this);
@@ -102,7 +101,6 @@ public:
     void set_parent(ParentTask& parent)
     {
         add_parent_count();
-        this->parents.emplace_back(&parent);
         SubscribeNoArgCallback cb = std::bind(
             static_cast<void (Node::*)(void)>(&Node::on_argument_ready), this);
         parent.add_child(cb);
@@ -263,7 +261,6 @@ public:
     template <std::size_t idx, typename ParentTask>
     void set_parent(ParentTask& parent)
     {
-        this->parents.emplace_back(&parent);
         parent.add_child(std::bind(&Node::on_argument_ready<idx>, this,
                                    std::placeholders::_1));
         parent.next_nodes.emplace_back(this);
@@ -281,7 +278,6 @@ public:
     template <typename ParentTask>
     void set_parent(ParentTask& parent)
     {
-        this->parents.emplace_back(&parent);
         add_parent_count();
         SubscribeNoArgCallback cb = std::bind(
             static_cast<void (Node::*)(void)>(&Node::on_argument_ready), this);
