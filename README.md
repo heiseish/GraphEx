@@ -1,7 +1,7 @@
 # GraphEx
 ![Language](https://img.shields.io/badge/language-C%2B%2B-informational.svg?logo=C%2B%2B)
 ![Status](https://img.shields.io/static/v1.svg?label=Status&message=alpha&color=yellow)
-
+![Build](https://travis-ci.org/heiseish/GraphEx.svg?branch=master)
 <img src="docs/3-03.svg">
 
 Image Credit [Network Vectors by Vecteezy](https://www.vecteezy.com/free-vector/network)

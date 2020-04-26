@@ -14,6 +14,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 set(3RDPARTY_INCLUDE_DIRS)
 set(3RDPARTY_LIBRARIES)
+set(RUN_BENCHMARK ON)
 
 enable_testing()
 find_package(GTest REQUIRED)
@@ -51,27 +52,29 @@ target_compile_definitions(
 )
 ]]
 
+if ("${RUN_BENCHMARK}" STREQUAL "ON") {
+    find_package(benchmark REQUIRED)
+    add_executable(bmark
+    ${CMAKE_SOURCE_DIR}/benchmark.cpp
+    )
+    target_include_directories(bmark 
+        PUBLIC
+            "${GOOGLE_BENCHMARK_SRC}/include"
+            "{CMAKE_CURRENT_SOURCE_DIR}"
+            "${Boost_INCLUDE_DIR}"
+            "${BOOST_LOCKFREE_DIR}"
+    )
+    #[[
+    target_compile_definitions(
+        bmark 
+            PUBLIC 
+            "USE_BOOST_LOCKLESS_Q"
+    )
+    ]]
 
-find_package(benchmark REQUIRED)
-add_executable(bmark
-   ${CMAKE_SOURCE_DIR}/benchmark.cpp
-)
-target_include_directories(bmark 
-    PUBLIC
-        "${GOOGLE_BENCHMARK_SRC}/include"
-        "{CMAKE_CURRENT_SOURCE_DIR}"
-        "${Boost_INCLUDE_DIR}"
-        "${BOOST_LOCKFREE_DIR}"
-)
-#[[
-target_compile_definitions(
-    bmark 
-        PUBLIC 
-        "USE_BOOST_LOCKLESS_Q"
-)
-]]
+    target_link_libraries(bmark 
+        PUBLIC
+            benchmark::benchmark
+    )
+}
 
-target_link_libraries(bmark 
-    PUBLIC
-        benchmark::benchmark
-)
