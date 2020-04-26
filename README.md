@@ -191,7 +191,7 @@ After that, simply include `cptl.hpp` or `cptl_stl.hpp` and `graphex.hpp` in you
 The project is still under development and still too early for any usage.
 
 You'll need the following packages:
-1. CMake (>= 3.15) with Ninja build system (1.9.0)
+1. CMake (>= 3.12) with Ninja build system (1.9.0)
 2. Boost (1.67.0)
 3. benchmark (1.5.0)
 4. GTest (1.8.0)
