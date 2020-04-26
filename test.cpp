@@ -213,9 +213,9 @@ TEST_F(GraphExTest, ShouldBeAbleToHandleNonCopyableStruct)
     std::cout << "Done running\n";
     try {
         auto initial_input = first.collect();
-        FAIL() << "Expected std::runtime_error";
+        FAIL() << "Expected std::logic_error";
     }
-    catch (const std::runtime_error& err) {
+    catch (const std::logic_error& err) {
         EXPECT_EQ(err.what(), std::string("No result found in node"));
     }
     auto final_output = second.collect();

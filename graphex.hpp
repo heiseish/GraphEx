@@ -24,9 +24,9 @@ namespace GE {
 
 #define likely(x) __builtin_expect((x), 1)
 #define unlikely(x) __builtin_expect((x), 0)
-#define DE_ENFORCE(x, y)                       \
-    do                                         \
-        if (!(x)) throw std::runtime_error(y); \
+#define DE_ENFORCE(x, y)                     \
+    do                                       \
+        if (!(x)) throw std::logic_error(y); \
     while (0)
 
 class BaseNode {
@@ -126,8 +126,9 @@ public:
     virtual void execute() override
     {
         // wait for result to be ready
-        while (_pendingCount > 0)
-            ;
+        // clang-format off
+        while (_pendingCount > 0);
+        // clang-format on
         if constexpr (std::is_void_v<ReturnType>) {
             if constexpr (!std::is_copy_constructible<decltype(_args)>::value) {
                 std::apply(_task, std::move(_args));
@@ -162,9 +163,7 @@ public:
     /// node
     ReturnType collect()
     {
-        if (!_result) {
-            throw std::runtime_error("No result found in node");
-        }
+        DE_ENFORCE(_result, "No result found in node");
         if constexpr (!std::is_copy_constructible<ReturnType>::value) {
             return std::move(_result.value());
         }
@@ -181,16 +180,13 @@ public:
     void addChild(SubscribeCallback child)
     {
         if constexpr (!std::is_copy_constructible<ReturnType>::value) {
-            if (_childTasks.size() > 0) {
-                throw std::logic_error(
-                    "Non copyable result cannot be passed to more than 1 child "
-                    "process");
-            }
-            if (_isOutput) {
-                throw std::logic_error(
-                    "Non copyable result which has been marked as output "
-                    "cannot have children");
-            }
+            DE_ENFORCE(!_isOutput,
+                       "Non copyable result which has been marked as output "
+                       "cannot have children");
+            DE_ENFORCE(
+                _childTasks.empty(),
+                "Non copyable result cannot be passed to more than 1 child "
+                "process");
         }
         _childTasks.push_back(child);
     }
