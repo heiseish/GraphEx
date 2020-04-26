@@ -24,7 +24,7 @@ namespace GE {
 
 #define likely(x) __builtin_expect((x), 1)
 #define unlikely(x) __builtin_expect((x), 0)
-#define DE_ENFORCE(x, y)                     \
+#define GE_ENFORCE(x, y)                     \
     do                                       \
         if (!(x)) throw std::logic_error(y); \
     while (0)
@@ -138,7 +138,7 @@ public:
         }
         else {
             if constexpr (!std::is_copy_constructible<ReturnType>::value) {
-                DE_ENFORCE(_childTasks.size() <= 1,
+                GE_ENFORCE(_childTasks.size() <= 1,
                            "Internal Error: More than 1 child process for "
                            "non-copyable object");
                 _result = std::apply(_task, std::move(_args));
@@ -163,7 +163,7 @@ public:
     /// node
     ReturnType collect()
     {
-        DE_ENFORCE(_result, "No result found in node");
+        GE_ENFORCE(_result, "No result found in node");
         if constexpr (!std::is_copy_constructible<ReturnType>::value) {
             return std::move(_result.value());
         }
@@ -180,10 +180,10 @@ public:
     void addChild(SubscribeCallback child)
     {
         if constexpr (!std::is_copy_constructible<ReturnType>::value) {
-            DE_ENFORCE(!_isOutput,
+            GE_ENFORCE(!_isOutput,
                        "Non copyable result which has been marked as output "
                        "cannot have children");
-            DE_ENFORCE(
+            GE_ENFORCE(
                 _childTasks.empty(),
                 "Non copyable result cannot be passed to more than 1 child "
                 "process");
