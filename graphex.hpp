@@ -12,6 +12,7 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include <list>
 #include <queue>
 #include <iostream>
 
@@ -30,31 +31,163 @@ namespace GE {
         if (!(x)) throw std::runtime_error(y); \
     while (0)
 
-class BaseNode {
+class GraphNode
+{
+    using Dependents = std::vector<GraphNode *>;
+    using ExecuteCallback = std::function<void()>;
+    using ParentEnqueuedCallback = std::function<void()>;
+    using AllParentEnqueuedCallback = std::function<bool()>;
+    using AddParentCountCallback = std::function<void()>;
+    using ResetCallback = std::function<void()>;
 public:
-    virtual void execute() = 0;
+    template <typename NodeType>
+    GraphNode(NodeType* nodePtr, uint32_t idx)
+        : _idx(idx)
+        , _execute(std::bind(&NodeType::execute, nodePtr))
+        , _parentEnqueued(std::bind(&NodeType::parentEnqueued, nodePtr))
+        , _allParentEnqueued(std::bind(&NodeType::allParentEnqueued, nodePtr))
+        , _addParentCount(std::bind(&NodeType::addParentCount, nodePtr))
+        , _reset(std::bind(&NodeType::reset, nodePtr))
+    {}
 
-    /// @brief markAsOutput mark the node as output node and preserve the
-    /// value returned by the _task function. If a node is not marked as output
-    /// node, there is no guarantee The result retrieved from the node is valid
-    virtual void markAsOutput() { _isOutput = true; }
+    void registerDependent(GraphNode* dependent) {
+        _dependents.push_back(dependent);
+    }
+    Dependents& getDependents() { return _dependents; }
+    uint32_t getIndex() const { return _idx; }
 
-    virtual bool allParentEnqueued() { return false; }
-    virtual void parentEnqueued() = 0;
-    virtual void reset() = 0;
+    void execute() { _execute(); } // TODO: const?
+    void parentEnqueued() { _parentEnqueued(); } // TODO: const?
+    bool allParentEnqueued() { return _allParentEnqueued(); } // TODO: const?
+    void addParentCount() { _addParentCount(); } // TODO: const?
+    void reset() { _reset(); } // TODO: const?
 
-    /// _nextNodes contains the child nodes for current node. Those are nodes
-    /// which are signal upon the completion of the _task in current nnode
-    std::vector<BaseNode*> _nextNodes;
+private:
+    // nodes that depend on the execution of this node
+    Dependents _dependents;
+    // debugging
+    uint32_t _idx;
 
-protected:
-    bool _isOutput = false;
+    ExecuteCallback _execute;
+    ParentEnqueuedCallback _parentEnqueued;
+    AllParentEnqueuedCallback _allParentEnqueued;
+    AddParentCountCallback _addParentCount;
+    ResetCallback _reset;
+};
+
+class GraphEx {
+public:
+    GraphEx(size_t concurrency = 1) noexcept : _pool(concurrency) {}
+
+    /// @brief register entry point for the graph
+    template <typename NodeType>
+    void registerInputNode(NodeType* node)
+    {
+        // Assertion fail means:
+        // Invalid NodeType, not created using GraphEx::makeNode method.
+        assert(node->getGraphNode());
+        _inputNodes.push_back(node->getGraphNode());
+    }
+
+    template <typename NodeType>
+    GraphNode* registerGraphNode(NodeType* node)
+    {
+        _allNodes.emplace_back(node, _allNodes.size());
+        return &_allNodes.back();
+    }
+
+    /// @brief check for cycle in the graph
+    /// assume all the relevant nodes can be checked from input nodes
+    bool hasCycle()
+    {
+        std::unordered_map<GraphNode*, bool> col;
+        std::function<bool(GraphNode*)> dfs =
+            [&](GraphNode* currentNode) -> bool {
+            col[currentNode] = true;
+            for (auto* nextNode : currentNode->getDependents()) {
+                if (likely(!col.count(nextNode))) {
+                    if (dfs(nextNode)) {
+                        return true;
+                    }
+                }
+                else if (unlikely(col[nextNode] == true)) {
+                    return true;
+                }
+            }
+            col[currentNode] = false;
+            return false;
+        };
+        for (auto* inputNode : _inputNodes) {
+
+            col.clear();
+            if (dfs(inputNode)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void reset()
+    {
+        std::unordered_set<GraphNode*> vis;
+        std::function<bool(GraphNode*)> dfs =
+            [&](GraphNode* currentNode) -> bool {
+            vis.insert(currentNode);
+            currentNode->reset();
+            for (auto* nextNode : currentNode->getDependents()) {
+                if (vis.find(nextNode) == vis.end()) {
+                    dfs(nextNode);
+                }
+            }
+            return false;
+        };
+        for (auto* inputNode : _inputNodes) {
+            if (vis.find(inputNode) == vis.end()) dfs(inputNode);
+        }
+    }
+
+    /// @brief run the graph execution from input nodes
+    void execute()
+    {
+        // create thread _pool with 4 worker threads
+        std::unordered_set<GraphNode*> processed;
+        std::queue<GraphNode*> qu;
+
+        for (auto* v : _inputNodes) {
+            qu.emplace(v);
+            processed.emplace(v);
+            for (auto* k : v->getDependents()) k->parentEnqueued();
+        }
+
+        while (!qu.empty()) {
+            auto* nxt = qu.front();
+            qu.pop();
+            _pool.push(std::bind(&GraphNode::execute, nxt));
+            for (auto* nextNode : nxt->getDependents()) {
+                if (processed.find(nextNode) == processed.end() &&
+                    nextNode->allParentEnqueued()) {
+                    qu.emplace(nextNode);
+                    processed.emplace(nextNode);
+                    for (auto* v : nextNode->getDependents()) v->parentEnqueued();
+                }
+            }
+        }
+        _pool.stop(true);
+    }
+
+private:
+
+    ctpl::thread_pool _pool;
+    std::list<GraphNode> _allNodes; // lifetime control
+    std::vector<GraphNode*> _inputNodes; // source nodes
 };
 
 template <typename TaskCallback, typename... Args>
-class Node final : public BaseNode {
+class Node {
     friend class GraphEx;
+    friend class GraphNode;
 public:
+    using NodeType = Node<TaskCallback, Args...>;
     using ReturnType = std::invoke_result_t<TaskCallback, Args...>;
     using ResultStorage = typename std::conditional_t<
         !std::is_void_v<ReturnType>,
@@ -70,7 +203,10 @@ public:
         >;
     using SubscribeNoArgCallback = std::function<void(void)>;
 
-    Node(TaskCallback task) : _task(task) {}
+    Node(GraphEx& executor, TaskCallback task)
+        : _task(task)
+        , _graphNode(executor.registerGraphNode(this))
+    {}
 
     /// @brief setParent add a node as a prequel to current node, and the
     /// result of parent node will be passed or consumed by current node once
@@ -97,11 +233,15 @@ public:
             "Could not record result of a function that returns void as "
             "an argument for this task");
         parent.addChild(
-            std::bind(&Node::onArgumentReady<idx>, this,
+            std::bind(&NodeType::onArgumentReady<idx>, this,
                 std::placeholders::_1
                 )
             );
-        parent._nextNodes.emplace_back(this);
+
+        // Assertion fail means:
+        // Invalid NodeType, not created using GraphEx::makeNode method.
+        assert(parent.getGraphNode() && _graphNode);
+        parent.getGraphNode()->registerDependent(_graphNode);
     }
 
     /// @brief setParent add a node as a prequel to current node. The parent
@@ -118,18 +258,22 @@ public:
     {
         addParentCount();
         SubscribeNoArgCallback cb = std::bind(
-            static_cast<void (Node::*)(void)>(&Node::onArgumentReady),
+            static_cast<void (NodeType::*)(void)>(&NodeType::onArgumentReady),
             this
             );
         parent.addChild(cb);
-        parent._nextNodes.emplace_back(this);
+
+        // Assertion fail means:
+        // Invalid NodeType, not created using GraphEx::makeNode method.
+        assert(parent.getGraphNode() && _graphNode);
+        parent.getGraphNode()->registerDependent(_graphNode);
     }
 
     /// @brief Run the main _task registered by current node
     /// After the _task is finish, call the registered callback functions
     /// @throw if `ReturnType` is non-copyable but there are more than 1 child
     /// tasks that require the result object
-    virtual void execute() override
+    void execute() // TODO: move this to private
     {
         // wait for result to be ready
         while (_pendingCount > 0) ;
@@ -208,23 +352,11 @@ public:
         _noArgChildTasks.push_back(child);
     }
 
-private:
-    virtual void parentEnqueued() override { ++_parentEnqueued; }
-    virtual bool allParentEnqueued() override
-    {
-        return _parentEnqueued == _parentCount;
-    }
-    void addParentCount()
-    {
-        ++_parentCount;
-        ++_pendingCount;
-    }
-    virtual void reset() override
-    {
-        _result.reset();
-        _pendingCount = _parentCount;
-        _parentEnqueued = 0;
-    }
+    /// @brief markAsOutput mark the node as output node and preserve the
+    /// value returned by the _task function. If a node is not marked as output
+    /// node, there is no guarantee The result retrieved from the node is valid
+    void markAsOutput() { _isOutput = true; }
+
     /// @brief A register function that can be used to register callback when
     /// parent nodes have finish running
     template <std::size_t idx>
@@ -240,6 +372,27 @@ private:
 
     void onArgumentReady() { --_pendingCount; }
 
+    GraphNode* getGraphNode() const { return _graphNode; }
+    void setGraphNode(GraphNode* graphNode) { _graphNode = graphNode; }
+
+private:
+    void parentEnqueued() { ++_parentEnqueued; }
+    bool allParentEnqueued() const
+    {
+        return _parentEnqueued == _parentCount;
+    }
+    void addParentCount()
+    {
+        ++_parentCount;
+        ++_pendingCount;
+    }
+    void reset()
+    {
+        _result.reset();
+        _pendingCount = _parentCount;
+        _parentEnqueued = 0;
+    }
+
     TaskCallback _task;
     std::tuple<Args...> _args;
     std::optional<ResultStorage> _result;
@@ -250,123 +403,30 @@ private:
 
     std::vector<SubscribeCallback> _childTasks;
     std::vector<SubscribeNoArgCallback> _noArgChildTasks;
-};
 
-class GraphEx {
-public:
-    GraphEx(size_t concurrency = 1) noexcept : _pool(concurrency) {}
+    // populate only when this node is registered with GraphEx.
+    GraphNode* _graphNode = nullptr;
 
-    /// @brief register entry point for the graph
-    template <typename ReturnType, typename... Args>
-    void registerInputNode(Node<ReturnType, Args...>* node)
-    {
-        _inputNodes.emplace_back(node);
-    }
-
-    template <typename... Args>
-    void registerInputNode(Node<Args...>* node)
-    {
-        _inputNodes.emplace_back(node);
-    }
-
-    /// @brief check for cycle in the graph
-    /// assume all the relevant nodes can be checked from input nodes
-    bool hasCycle()
-    {
-        std::unordered_map<BaseNode*, bool> col;
-        std::function<bool(BaseNode*)> dfs =
-            [&](BaseNode* currentNode) -> bool {
-            col[currentNode] = true;
-            for (auto& nextNode : currentNode->_nextNodes) {
-                if (likely(!col.count(nextNode))) {
-                    if (dfs(nextNode)) {
-                        return true;
-                    }
-                }
-                else if (unlikely(col[nextNode] == true)) {
-                    return true;
-                }
-            }
-            col[currentNode] = false;
-            return false;
-        };
-        for (auto& inputNode : _inputNodes) {
-            col.clear();
-            if (dfs(inputNode)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    void reset()
-    {
-        std::unordered_set<BaseNode*> vis;
-        std::function<bool(BaseNode*)> dfs =
-            [&](BaseNode* currentNode) -> bool {
-            vis.insert(currentNode);
-            currentNode->reset();
-            for (auto& nextNode : currentNode->_nextNodes) {
-                if (vis.find(nextNode) == vis.end()) {
-                    dfs(nextNode);
-                }
-            }
-            return false;
-        };
-        for (auto& inputNode : _inputNodes) {
-            if (vis.find(inputNode) == vis.end()) dfs(inputNode);
-        }
-    }
-
-    /// @brief run the graph execution from input nodes
-    void execute()
-    {
-        // create thread _pool with 4 worker threads
-        std::unordered_set<BaseNode*> processed;
-        std::queue<BaseNode*> qu;
-
-        for (auto& v : _inputNodes) {
-            qu.emplace(v);
-            processed.emplace(v);
-            for (auto& k : v->_nextNodes) k->parentEnqueued();
-        }
-
-        while (!qu.empty()) {
-            decltype(auto) nxt = qu.front();
-            qu.pop();
-            _pool.push(std::bind(&BaseNode::execute, nxt));
-            for (auto& nextNode : nxt->_nextNodes) {
-                if (processed.find(nextNode) == processed.end() &&
-                    nextNode->allParentEnqueued()) {
-                    qu.emplace(nextNode);
-                    processed.emplace(nextNode);
-                    for (auto& v : nextNode->_nextNodes) v->parentEnqueued();
-                }
-            }
-        }
-        _pool.stop(true);
-    }
-
-private:
-    ctpl::thread_pool _pool;
-    std::vector<BaseNode*> _inputNodes;
+    // if a node is not marked as output node, there is no
+    // guarantee result retrieved from the node is valid.
+    bool _isOutput = false;
 };
 
 template <typename ReturnType, typename... Args>
-decltype(auto) makeNode(std::function<ReturnType(Args...)> func)
+decltype(auto) makeNode(GraphEx& executor, std::function<ReturnType(Args...)> func)
 {
-    return Node<std::function<ReturnType(Args...)>, Args...>(func);
+    return Node<std::function<ReturnType(Args...)>, Args...>(executor, func);
 }
 
 template <typename... Args>
-decltype(auto) makeNode(std::function<void(Args...)> func)
+decltype(auto) makeNode(GraphEx& executor, std::function<void(Args...)> func)
 {
-    return Node<std::function<void(Args...)>, Args...>(func);
+    return Node<std::function<void(Args...)>, Args...>(executor, func);
 }
 
-decltype(auto) makeNode(std::function<void()> func)
+decltype(auto) makeNode(GraphEx& executor, std::function<void()> func)
 {
-    return Node<std::function<void()>>(func);
+    return Node<std::function<void()>>(executor, func);
 }
 
 }  // namespace GE

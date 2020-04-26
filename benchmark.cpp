@@ -15,18 +15,20 @@ std::function<int(int, int)> fifthFunc = [](int a, int b) -> int {
 static void BM_GraphEX(benchmark::State& state)
 {
     for (auto _ : state) {
-        decltype(auto) first = makeNode(firstFunc);
-        decltype(auto) second = makeNode(secondFunc);
-        decltype(auto) third = makeNode(thirdFunc);
-        decltype(auto) fourth = makeNode(fourthFunc);
-        decltype(auto) fifth = makeNode(fifthFunc);
+        GraphEx executor;
+
+        decltype(auto) first = makeNode(executor, firstFunc);
+        decltype(auto) second = makeNode(executor, secondFunc);
+        decltype(auto) third = makeNode(executor, thirdFunc);
+        decltype(auto) fourth = makeNode(executor, fourthFunc);
+        decltype(auto) fifth = makeNode(executor, fifthFunc);
 
         second.setParent(first);
         third.setParent<0>(second);
         fourth.setParent<0>(second);
         fifth.setParent<0>(third);
         fifth.setParent<1>(fourth);
-        GraphEx executor;
+
         executor.registerInputNode(&first);
         executor.execute();
     }
@@ -103,18 +105,20 @@ auto sixCostlyFunc(int a, int b, int c, int d) -> int
 static void BM_GraphEX_Expensive(benchmark::State& state)
 {
     for (auto _ : state) {
-        decltype(auto) first = makeNode(firstCostlyFunc);
-        decltype(auto) second = makeNode(secondCostlyFunc);
-        decltype(auto) third = makeNode(thirdCostlyFunc);
-        decltype(auto) fourth = makeNode(fourthCostlyFunc);
-        decltype(auto) fifth = makeNode(fifthCostlyFunc);
+        GraphEx executor;
+
+        decltype(auto) first = makeNode(executor, firstCostlyFunc);
+        decltype(auto) second = makeNode(executor, secondCostlyFunc);
+        decltype(auto) third = makeNode(executor, thirdCostlyFunc);
+        decltype(auto) fourth = makeNode(executor, fourthCostlyFunc);
+        decltype(auto) fifth = makeNode(executor, fifthCostlyFunc);
 
         second.setParent(first);
         third.setParent<0>(second);
         fourth.setParent<0>(second);
         fifth.setParent<0>(third);
         fifth.setParent<1>(fourth);
-        GraphEx executor;
+
         executor.registerInputNode(&first);
         executor.execute();
     }
@@ -135,13 +139,15 @@ BENCHMARK(BM_FunctionCall_Expensive);
 
 static void BM_GraphEX_Expensive_Parallel(benchmark::State& state)
 {
-    decltype(auto) first = makeNode(secondCostlyFunc);
-    decltype(auto) second = makeNode(thirdCostlyFunc);
-    decltype(auto) third = makeNode(thirdCostlyFunc);
-    decltype(auto) fourth = makeNode(fourthCostlyFunc);
-    decltype(auto) fifth = makeNode(fourthCostlyFunc);
+    GraphEx executor(4);
+
+    decltype(auto) first = makeNode(executor, secondCostlyFunc);
+    decltype(auto) second = makeNode(executor, thirdCostlyFunc);
+    decltype(auto) third = makeNode(executor, thirdCostlyFunc);
+    decltype(auto) fourth = makeNode(executor, fourthCostlyFunc);
+    decltype(auto) fifth = makeNode(executor, fourthCostlyFunc);
     std::function<int(int, int, int, int)> ss = sixCostlyFunc;
-    decltype(auto) sixth = makeNode(ss);
+    decltype(auto) sixth = makeNode(executor, ss);
 
     second.setParent<0>(first);
     third.setParent<0>(first);
@@ -153,7 +159,6 @@ static void BM_GraphEX_Expensive_Parallel(benchmark::State& state)
     sixth.setParent<2>(fourth);
     sixth.setParent<3>(fifth);
 
-    GraphEx executor(4);
     executor.registerInputNode(&first);
     for (auto _ : state) {
         executor.execute();
