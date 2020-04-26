@@ -41,7 +41,7 @@ case $key in
     -b|--build)
     echo "Building the project"
     mkdir -p build
-    cd build && cmake -GNinja -DCMAKE_BUILD_TYPE=Release .. && ninja -j8
+    cd build && cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DRUN_BENCHMARK=ON .. && ninja -j8
     shift 
     shift 
     ;;

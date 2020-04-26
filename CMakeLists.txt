@@ -14,7 +14,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 set(3RDPARTY_INCLUDE_DIRS)
 set(3RDPARTY_LIBRARIES)
-set(RUN_BENCHMARK ON)
+set(RUN_BENCHMARK)
 
 enable_testing()
 find_package(GTest REQUIRED)
