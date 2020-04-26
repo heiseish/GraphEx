@@ -1,7 +1,7 @@
 #include <benchmark/benchmark.h>
 #include <algorithm>
-#include "graphex.hpp"
 #include "cptl_stl.hpp"
+#include "graphex.hpp"
 
 using namespace GE;
 
@@ -171,7 +171,8 @@ static void BM_FunctionCall_Expensive_NonParallel(benchmark::State& state)
         auto res3 = thirdCostlyFunc(res1);
         auto res4 = fourthCostlyFunc(res1);
         auto res5 = fourthCostlyFunc(res1);
-        sixCostlyFunc(res2, res3, res4, res5);
+        auto fin = sixCostlyFunc(res2, res3, res4, res5);
+        std::cout << fin << '\n';
     }
 }
 BENCHMARK(BM_FunctionCall_Expensive_NonParallel);
@@ -179,19 +180,12 @@ BENCHMARK(BM_FunctionCall_Expensive_NonParallel);
 static void BM_FunctionCall_Expensive_Parallel(benchmark::State& state)
 {
     ctpl::thread_pool pool(4);
-    std::function<int(int, int)> third = [&](int id, int res) -> int {
-        return thirdCostlyFunc(res);
-    };
-    std::function<int(int, int)> fourth = [&](int id, int res) -> int {
-        return fourthCostlyFunc(res);
-    };
     for (auto _ : state) {
-        auto res1 = secondCostlyFunc();
-        auto f1 = pool.push(third, res1);
-        auto f2 = pool.push(third, res1);
-        auto f3 = pool.push(fourth, res1);
-        auto f4 = pool.push(fourth, res1);
-        pool.stop(true);
+        auto res = secondCostlyFunc();
+        auto f1 = pool.push(std::bind(thirdCostlyFunc, res));
+        auto f2 = pool.push(std::bind(thirdCostlyFunc, res));
+        auto f3 = pool.push(std::bind(fourthCostlyFunc, res));
+        auto f4 = pool.push(std::bind(fourthCostlyFunc, res));
         sixCostlyFunc(f1.get(), f2.get(), f3.get(), f4.get());
     }
     pool.stop();

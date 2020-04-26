@@ -379,6 +379,83 @@ TEST_F(GraphExTest, ShouldBeAbleToRunConcurrentlyCorrectly)
     EXPECT_EQ(fourThreadResult, eightThreadResult);
 }
 
+TEST_F(GraphExTest, ShouldBeAbleToRunConcurrentlyCorrectly2)
+{
+    constexpr int loop_n = 10'000;
+    std::function<void(void)> firstCostlyFunc = []() -> void {
+        for (int i = 0; i < loop_n; ++i)
+            ;
+    };
+    std::function<int(void)> secondCostlyFunc = []() -> int {
+        int k = 1;
+        for (int i = 0; i < loop_n; ++i) k ^= i;
+        return k;
+    };
+    std::function<int(int)> thirdCostlyFunc = [](int a) -> int {
+        for (int i = loop_n; i >= 0; --i) {
+            if (i & 1) a = std::min(a ^ i, i + 10);
+        }
+        return a;
+    };
+    std::function<int(int)> fourthCostlyFunc = [](int a) -> int {
+        for (int i = 100; i >= 0; --i) {
+            for (int j = 1; j <= 100; ++j) {
+                a ^= (i % j);
+                ++a;
+            }
+        }
+        return a;
+    };
+    std::function<int(int, int)> fifthCostlyFunc = [](int a, int b) -> int {
+        int ret = 1;
+        constexpr int MOD = 1e9 + 7;
+        b = std::abs(b);
+        while (b) {
+            if (b & 1) ret = (long long)ret * a % MOD;
+            a = (long long)a * a % MOD;
+            b >>= 1;
+        }
+        return ret;
+    };
+
+    std::function<int(int, int, int, int)> sixCostlyFunc =
+        [](int a, int b, int c, int d) -> int {
+        a = std::max(a, c);
+        b = std::max(b, d);
+
+        int ret = 1;
+        constexpr int MOD = 1e9 + 7;
+        b = std::abs(b);
+        while (b) {
+            if (b & 1) ret = (long long)ret * a % MOD;
+            a = (long long)a * a % MOD;
+            b >>= 1;
+        }
+        return ret;
+    };
+
+    decltype(auto) first = makeNode(secondCostlyFunc);
+    decltype(auto) second = makeNode(thirdCostlyFunc);
+    decltype(auto) third = makeNode(thirdCostlyFunc);
+    decltype(auto) fourth = makeNode(fourthCostlyFunc);
+    decltype(auto) fifth = makeNode(fourthCostlyFunc);
+    decltype(auto) sixth = makeNode(sixCostlyFunc);
+
+    second.setParent<0>(first);
+    third.setParent<0>(first);
+    fourth.setParent<0>(first);
+    fifth.setParent<0>(first);
+
+    sixth.setParent<0>(second);
+    sixth.setParent<1>(third);
+    sixth.setParent<2>(fourth);
+    sixth.setParent<3>(fifth);
+    sixth.markAsOutput();
+    GraphEx executor(4);
+    executor.registerInputNode(&first);
+    executor.execute();
+    EXPECT_EQ(sixth.collect(), 123235512);
+}
 auto main(int argc, char** argv) -> int
 {
     ::testing::InitGoogleTest(&argc, argv);
