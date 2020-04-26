@@ -171,8 +171,7 @@ static void BM_FunctionCall_Expensive_NonParallel(benchmark::State& state)
         auto res3 = thirdCostlyFunc(res1);
         auto res4 = fourthCostlyFunc(res1);
         auto res5 = fourthCostlyFunc(res1);
-        auto fin = sixCostlyFunc(res2, res3, res4, res5);
-        std::cout << fin << '\n';
+        sixCostlyFunc(res2, res3, res4, res5);
     }
 }
 BENCHMARK(BM_FunctionCall_Expensive_NonParallel);
