@@ -57,12 +57,14 @@ class Node final : public BaseNode {
 public:
     using ReturnType = std::invoke_result_t<TaskCallback, Args...>;
     using ResultStorage =
-        typename std::conditional_t<!std::is_void_v<ReturnType>, ReturnType,
+        typename std::conditional_t<!std::is_void_v<ReturnType>,
+                                    ReturnType,
                                     int /* placeholder type for void-returning
                                            function */
                                     >;
     using SubscribeCallback = std::function<void(
-        typename std::conditional_t<!std::is_void_v<ReturnType>, ReturnType,
+        typename std::conditional_t<!std::is_void_v<ReturnType>,
+                                    ReturnType,
                                     std::false_type>)>;
     using SubscribeNoArgCallback = std::function<void(void)>;
 
@@ -93,8 +95,8 @@ public:
             !std::is_same_v<typename ParentTask::ReturnType, void>,
             "Could not record result of a function that returns void as "
             "an argument for this task");
-        parent.addChild(std::bind(&Node::onArgumentReady<idx>, this,
-                                  std::placeholders::_1));
+        parent.addChild(std::bind(
+            &Node::onArgumentReady<idx>, this, std::placeholders::_1));
         parent._nextNodes.emplace_back(this);
     }
 

@@ -183,7 +183,8 @@ public:
     {
         auto pck =
             std::make_shared<std::packaged_task<decltype(f(0, rest...))(int)>>(
-                std::bind(std::forward<F>(f), std::placeholders::_1,
+                std::bind(std::forward<F>(f),
+                          std::placeholders::_1,
                           std::forward<Rest>(rest)...));
         auto _f =
             new std::function<void(int id)>([pck](int id) { (*pck)(id); });
