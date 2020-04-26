@@ -133,8 +133,6 @@ public:
     {
         // wait for result to be ready
         while (_pendingCount > 0) ;
-            _validResult = true;
-                _validResult = false;
         if constexpr (std::is_void_v<ReturnType>) {
             if constexpr (!std::is_copy_constructible<decltype(_args)>::value) {
                 std::apply(_task, std::move(_args));
@@ -143,7 +141,6 @@ public:
                 std::apply(_task, _args);
         }
         else {
-            _validResult = true;
             if constexpr (!std::is_copy_constructible<ReturnType>::value) {
                 DE_ENFORCE(_childTasks.size() <= 1,
                         "Internal Error: More than 1 child process for "
@@ -151,6 +148,7 @@ public:
                 _result = std::apply(_task, std::move(_args));
                 if (!_childTasks.empty()) {
                     _childTasks[0](std::move(_result.value()));
+                    _result.reset();
                 }
             }
             else {
@@ -169,7 +167,7 @@ public:
     /// node
     ReturnType collect()
     {
-        if (!_validResult) {
+        if (!_result) {
             throw std::runtime_error("No result found in node");
         }
         if constexpr (!std::is_copy_constructible<ReturnType>::value) {
@@ -244,7 +242,6 @@ private:
 
     TaskCallback _task;
     std::tuple<Args...> _args;
-    bool _validResult = false;
     std::optional<ResultStorage> _result;
 
     size_t _parentEnqueued = 0;
