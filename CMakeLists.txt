@@ -52,7 +52,7 @@ target_compile_definitions(
 )
 ]]
 
-if ("${RUN_BENCHMARK}" STREQUAL "ON") {
+if ("${RUN_BENCHMARK}" STREQUAL "ON") 
     find_package(benchmark REQUIRED)
     add_executable(bmark
     ${CMAKE_SOURCE_DIR}/benchmark.cpp
@@ -76,5 +76,5 @@ if ("${RUN_BENCHMARK}" STREQUAL "ON") {
         PUBLIC
             benchmark::benchmark
     )
-}
+endif()
 

@@ -1,6 +1,7 @@
 #include <benchmark/benchmark.h>
 #include <algorithm>
 #include "graphex.hpp"
+#include "cptl_stl.hpp"
 
 using namespace GE;
 
@@ -177,37 +178,23 @@ BENCHMARK(BM_FunctionCall_Expensive_NonParallel);
 
 static void BM_FunctionCall_Expensive_Parallel(benchmark::State& state)
 {
+    ctpl::thread_pool pool(4);
+    std::function<int(int, int)> third = [&](int id, int res) -> int {
+        return thirdCostlyFunc(res);
+    };
+    std::function<int(int, int)> fourth = [&](int id, int res) -> int {
+        return fourthCostlyFunc(res);
+    };
     for (auto _ : state) {
         auto res1 = secondCostlyFunc();
-
-        // future from a packaged_task
-        std::packaged_task<int(int)> task1(thirdCostlyFunc);
-        std::future<int> f1 = task1.get_future();
-        std::thread t1(std::move(task1), res1);
-
-        std::packaged_task<int(int)> task2(thirdCostlyFunc);
-        std::future<int> f2 = task2.get_future();
-        std::thread t2(std::move(task2), res1);
-
-        std::packaged_task<int(int)> task3(fourthCostlyFunc);
-        std::future<int> f3 = task3.get_future();
-        std::thread t3(std::move(task3), res1);
-
-        std::packaged_task<int(int)> task4(fourthCostlyFunc);
-        std::future<int> f4 = task4.get_future();
-        std::thread t4(std::move(task4), res1);
-
-        // f1.wait();
-        // f2.wait();
-        // f3.wait();
-        // f4.wait();
+        auto f1 = pool.push(third, res1);
+        auto f2 = pool.push(third, res1);
+        auto f3 = pool.push(fourth, res1);
+        auto f4 = pool.push(fourth, res1);
+        pool.stop(true);
         sixCostlyFunc(f1.get(), f2.get(), f3.get(), f4.get());
-
-        t1.join();
-        t2.join();
-        t3.join();
-        t4.join();
     }
+    pool.stop();
 }
 BENCHMARK(BM_FunctionCall_Expensive_Parallel);
 
