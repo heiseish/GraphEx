@@ -50,7 +50,8 @@ public:
     bool pop(T &v)
     {
         std::unique_lock<std::mutex> lock(this->mutex);
-        if (this->q.empty()) return false;
+        if (this->q.empty())
+            return false;
         v = this->q.front();
         this->q.pop();
         return true;
@@ -127,7 +128,8 @@ public:
     void clear_queue()
     {
         std::function<void(int id)> *_f;
-        while (this->q.pop(_f)) delete _f;  // empty the queue
+        while (this->q.pop(_f))
+            delete _f;  // empty the queue
     }
 
     // pops a functional wrapper to the original function
@@ -139,7 +141,8 @@ public:
             _f);  // at return, delete the function even if an exception
                   // occurred
         std::function<void(int)> f;
-        if (_f) f = *_f;
+        if (_f)
+            f = *_f;
         return f;
     }
 
@@ -150,7 +153,8 @@ public:
     void stop(bool isWait = false)
     {
         if (!isWait) {
-            if (this->isStop) return;
+            if (this->isStop)
+                return;
             this->isStop = true;
             for (int i = 0, n = this->size(); i < n; ++i) {
                 *this->flags[i] = true;  // command the threads to stop
@@ -158,7 +162,8 @@ public:
             this->clear_queue();  // empty the queue
         }
         else {
-            if (this->isDone || this->isStop) return;
+            if (this->isDone || this->isStop)
+                return;
             this->isDone =
                 true;  // give the waiting threads a command to finish
         }
@@ -168,7 +173,8 @@ public:
         }
         for (int i = 0; i < static_cast<int>(this->threads.size());
              ++i) {  // wait for the computing threads to finish
-            if (this->threads[i]->joinable()) this->threads[i]->join();
+            if (this->threads[i]->joinable())
+                this->threads[i]->join();
         }
         // if there were no threads in the pool but some functors in the queue,
         // the functors are not deleted by the threads therefore delete them

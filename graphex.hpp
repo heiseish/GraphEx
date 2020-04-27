@@ -24,9 +24,10 @@ namespace GE {
 
 #define likely(x) __builtin_expect((x), 1)
 #define unlikely(x) __builtin_expect((x), 0)
-#define GE_ENFORCE(x, y)                     \
-    do                                       \
-        if (!(x)) throw std::logic_error(y); \
+#define GE_ENFORCE(x, y)               \
+    do                                 \
+        if (!(x))                      \
+            throw std::logic_error(y); \
     while (0)
 
 class BaseNode {
@@ -155,7 +156,8 @@ public:
             }
         }
 
-        for (auto childTask : _noArgChildTasks) childTask();
+        for (auto childTask : _noArgChildTasks)
+            childTask();
     }
 
     /// @brief Retrieve the result obtained by the current node _task
@@ -308,7 +310,8 @@ public:
             return false;
         };
         for (auto& inputNode : _inputNodes) {
-            if (vis.find(inputNode) == vis.end()) dfs(inputNode);
+            if (vis.find(inputNode) == vis.end())
+                dfs(inputNode);
         }
     }
 
@@ -322,7 +325,8 @@ public:
         for (auto& v : _inputNodes) {
             qu.emplace(v);
             processed.emplace(v);
-            for (auto& k : v->_nextNodes) k->parentEnqueued();
+            for (auto& k : v->_nextNodes)
+                k->parentEnqueued();
         }
 
         while (!qu.empty()) {
@@ -334,7 +338,8 @@ public:
                     nextNode->allParentEnqueued()) {
                     qu.emplace(nextNode);
                     processed.emplace(nextNode);
-                    for (auto& v : nextNode->_nextNodes) v->parentEnqueued();
+                    for (auto& v : nextNode->_nextNodes)
+                        v->parentEnqueued();
                 }
             }
         }

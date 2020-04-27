@@ -55,12 +55,14 @@ std::function<void(void)> firstCostlyFunc = []() -> void {
 };
 std::function<int(void)> secondCostlyFunc = []() -> int {
     int k = 1;
-    for (int i = 0; i < loop_n; ++i) k ^= i;
+    for (int i = 0; i < loop_n; ++i)
+        k ^= i;
     return k;
 };
 std::function<int(int)> thirdCostlyFunc = [](int a) -> int {
     for (int i = loop_n; i >= 0; --i) {
-        if (i & 1) a = std::min(a ^ i, i + 10);
+        if (i & 1)
+            a = std::min(a ^ i, i + 10);
     }
     return a;
 };
@@ -78,7 +80,8 @@ std::function<int(int, int)> fifthCostlyFunc = [](int a, int b) -> int {
     constexpr int MOD = 1e9 + 7;
     b = std::abs(b);
     while (b) {
-        if (b & 1) ret = (long long)ret * a % MOD;
+        if (b & 1)
+            ret = (long long)ret * a % MOD;
         a = (long long)a * a % MOD;
         b >>= 1;
     }
@@ -94,7 +97,8 @@ auto sixCostlyFunc(int a, int b, int c, int d) -> int
     constexpr int MOD = 1e9 + 7;
     b = std::abs(b);
     while (b) {
-        if (b & 1) ret = (long long)ret * a % MOD;
+        if (b & 1)
+            ret = (long long)ret * a % MOD;
         a = (long long)a * a % MOD;
         b >>= 1;
     }
