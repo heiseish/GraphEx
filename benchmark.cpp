@@ -1,5 +1,6 @@
 #include <benchmark/benchmark.h>
 #include <algorithm>
+#include "cptl_stl.hpp"
 #include "graphex.hpp"
 
 using namespace GE;
@@ -54,12 +55,14 @@ std::function<void(void)> firstCostlyFunc = []() -> void {
 };
 std::function<int(void)> secondCostlyFunc = []() -> int {
     int k = 1;
-    for (int i = 0; i < loop_n; ++i) k ^= i;
+    for (int i = 0; i < loop_n; ++i)
+        k ^= i;
     return k;
 };
 std::function<int(int)> thirdCostlyFunc = [](int a) -> int {
     for (int i = loop_n; i >= 0; --i) {
-        if (i & 1) a = std::min(a ^ i, i + 10);
+        if (i & 1)
+            a = std::min(a ^ i, i + 10);
     }
     return a;
 };
@@ -77,7 +80,8 @@ std::function<int(int, int)> fifthCostlyFunc = [](int a, int b) -> int {
     constexpr int MOD = 1e9 + 7;
     b = std::abs(b);
     while (b) {
-        if (b & 1) ret = (long long)ret * a % MOD;
+        if (b & 1)
+            ret = (long long)ret * a % MOD;
         a = (long long)a * a % MOD;
         b >>= 1;
     }
@@ -93,7 +97,8 @@ auto sixCostlyFunc(int a, int b, int c, int d) -> int
     constexpr int MOD = 1e9 + 7;
     b = std::abs(b);
     while (b) {
-        if (b & 1) ret = (long long)ret * a % MOD;
+        if (b & 1)
+            ret = (long long)ret * a % MOD;
         a = (long long)a * a % MOD;
         b >>= 1;
     }
@@ -177,37 +182,16 @@ BENCHMARK(BM_FunctionCall_Expensive_NonParallel);
 
 static void BM_FunctionCall_Expensive_Parallel(benchmark::State& state)
 {
+    ctpl::thread_pool pool(4);
     for (auto _ : state) {
-        auto res1 = secondCostlyFunc();
-
-        // future from a packaged_task
-        std::packaged_task<int(int)> task1(thirdCostlyFunc);
-        std::future<int> f1 = task1.get_future();
-        std::thread t1(std::move(task1), res1);
-
-        std::packaged_task<int(int)> task2(thirdCostlyFunc);
-        std::future<int> f2 = task2.get_future();
-        std::thread t2(std::move(task2), res1);
-
-        std::packaged_task<int(int)> task3(fourthCostlyFunc);
-        std::future<int> f3 = task3.get_future();
-        std::thread t3(std::move(task3), res1);
-
-        std::packaged_task<int(int)> task4(fourthCostlyFunc);
-        std::future<int> f4 = task4.get_future();
-        std::thread t4(std::move(task4), res1);
-
-        // f1.wait();
-        // f2.wait();
-        // f3.wait();
-        // f4.wait();
+        auto res = secondCostlyFunc();
+        auto f1 = pool.push(std::bind(thirdCostlyFunc, res));
+        auto f2 = pool.push(std::bind(thirdCostlyFunc, res));
+        auto f3 = pool.push(std::bind(fourthCostlyFunc, res));
+        auto f4 = pool.push(std::bind(fourthCostlyFunc, res));
         sixCostlyFunc(f1.get(), f2.get(), f3.get(), f4.get());
-
-        t1.join();
-        t2.join();
-        t3.join();
-        t4.join();
     }
+    pool.stop();
 }
 BENCHMARK(BM_FunctionCall_Expensive_Parallel);
 

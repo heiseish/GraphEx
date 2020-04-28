@@ -7,13 +7,12 @@
 #include <functional>
 #include <iostream>
 #include <optional>
+#include <queue>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
-#include <queue>
-#include <iostream>
 
 #ifdef USE_BOOST_LOCKLESS_Q
 #include "cptl.hpp"
@@ -25,9 +24,10 @@ namespace GE {
 
 #define likely(x) __builtin_expect((x), 1)
 #define unlikely(x) __builtin_expect((x), 0)
-#define DE_ENFORCE(x, y)                       \
-    do                                         \
-        if (!(x)) throw std::runtime_error(y); \
+#define GE_ENFORCE(x, y)               \
+    do                                 \
+        if (!(x))                      \
+            throw std::logic_error(y); \
     while (0)
 
 class BaseNode {
@@ -54,20 +54,19 @@ protected:
 template <typename TaskCallback, typename... Args>
 class Node final : public BaseNode {
     friend class GraphEx;
+
 public:
     using ReturnType = std::invoke_result_t<TaskCallback, Args...>;
-    using ResultStorage = typename std::conditional_t<
-        !std::is_void_v<ReturnType>,
-        ReturnType,
-        int /* placeholder type for void-returning function */
-        >;
-    using SubscribeCallback = std::function<
-        void(typename std::conditional_t<
-            !std::is_void_v<ReturnType>,
-            ReturnType,
-            std::false_type
-            >)
-        >;
+    using ResultStorage =
+        typename std::conditional_t<!std::is_void_v<ReturnType>,
+                                    ReturnType,
+                                    int /* placeholder type for void-returning
+                                           function */
+                                    >;
+    using SubscribeCallback = std::function<void(
+        typename std::conditional_t<!std::is_void_v<ReturnType>,
+                                    ReturnType,
+                                    std::false_type>)>;
     using SubscribeNoArgCallback = std::function<void(void)>;
 
     Node(TaskCallback task) : _task(task) {}
@@ -93,14 +92,12 @@ public:
     template <std::size_t idx, typename ParentTask>
     void setParent(ParentTask& parent)
     {
-        static_assert(!std::is_same_v<typename ParentTask::ReturnType, void>,
+        static_assert(
+            !std::is_same_v<typename ParentTask::ReturnType, void>,
             "Could not record result of a function that returns void as "
             "an argument for this task");
-        parent.addChild(
-            std::bind(&Node::onArgumentReady<idx>, this,
-                std::placeholders::_1
-                )
-            );
+        parent.addChild(std::bind(
+            &Node::onArgumentReady<idx>, this, std::placeholders::_1));
         parent._nextNodes.emplace_back(this);
     }
 
@@ -118,9 +115,7 @@ public:
     {
         addParentCount();
         SubscribeNoArgCallback cb = std::bind(
-            static_cast<void (Node::*)(void)>(&Node::onArgumentReady),
-            this
-            );
+            static_cast<void (Node::*)(void)>(&Node::onArgumentReady), this);
         parent.addChild(cb);
         parent._nextNodes.emplace_back(this);
     }
@@ -132,7 +127,9 @@ public:
     virtual void execute() override
     {
         // wait for result to be ready
-        while (_pendingCount > 0) ;
+        // clang-format off
+        while (_pendingCount > 0);
+        // clang-format on
         if constexpr (std::is_void_v<ReturnType>) {
             if constexpr (!std::is_copy_constructible<decltype(_args)>::value) {
                 std::apply(_task, std::move(_args));
@@ -142,9 +139,9 @@ public:
         }
         else {
             if constexpr (!std::is_copy_constructible<ReturnType>::value) {
-                DE_ENFORCE(_childTasks.size() <= 1,
-                        "Internal Error: More than 1 child process for "
-                        "non-copyable object");
+                GE_ENFORCE(_childTasks.size() <= 1,
+                           "Internal Error: More than 1 child process for "
+                           "non-copyable object");
                 _result = std::apply(_task, std::move(_args));
                 if (!_childTasks.empty()) {
                     _childTasks[0](std::move(_result.value()));
@@ -159,7 +156,8 @@ public:
             }
         }
 
-        for (auto childTask : _noArgChildTasks) childTask();
+        for (auto childTask : _noArgChildTasks)
+            childTask();
     }
 
     /// @brief Retrieve the result obtained by the current node _task
@@ -167,9 +165,7 @@ public:
     /// node
     ReturnType collect()
     {
-        if (!_result) {
-            throw std::runtime_error("No result found in node");
-        }
+        GE_ENFORCE(_result, "No result found in node");
         if constexpr (!std::is_copy_constructible<ReturnType>::value) {
             return std::move(_result.value());
         }
@@ -179,22 +175,20 @@ public:
     }
 
     /// @brief Add a callback function that will be called when the _task in
-    /// current node finished running. The object generated by the _task in thise
-    /// node will be passed to or consumed by the callback function `child`
+    /// current node finished running. The object generated by the _task in
+    /// thise node will be passed to or consumed by the callback function
+    /// `child`
     /// @param child callback function
     void addChild(SubscribeCallback child)
     {
         if constexpr (!std::is_copy_constructible<ReturnType>::value) {
-            if (_childTasks.size() > 0) {
-                throw std::logic_error(
-                    "Non copyable result cannot be passed to more than 1 child "
-                    "process");
-            }
-            if (_isOutput) {
-                throw std::logic_error(
-                    "Non copyable result which has been marked as output "
-                    "cannot have children");
-            }
+            GE_ENFORCE(!_isOutput,
+                       "Non copyable result which has been marked as output "
+                       "cannot have children");
+            GE_ENFORCE(
+                _childTasks.empty(),
+                "Non copyable result cannot be passed to more than 1 child "
+                "process");
         }
         _childTasks.push_back(child);
     }
@@ -228,7 +222,8 @@ private:
     /// @brief A register function that can be used to register callback when
     /// parent nodes have finish running
     template <std::size_t idx>
-    void onArgumentReady(decltype(std::get<idx>(std::declval<std::tuple<Args...>>())) arg)
+    void onArgumentReady(
+        decltype(std::get<idx>(std::declval<std::tuple<Args...>>())) arg)
     {
         if constexpr (!std::is_copy_constructible<decltype(arg)>::value) {
             std::get<idx>(_args) = std::move(arg);
@@ -245,7 +240,8 @@ private:
     std::optional<ResultStorage> _result;
 
     size_t _parentEnqueued = 0;
-    std::atomic<size_t> _pendingCount = std::tuple_size<std::tuple<Args...>>::value;
+    std::atomic<size_t> _pendingCount =
+        std::tuple_size<std::tuple<Args...>>::value;
     size_t _parentCount = std::tuple_size<std::tuple<Args...>>::value;
 
     std::vector<SubscribeCallback> _childTasks;
@@ -314,7 +310,8 @@ public:
             return false;
         };
         for (auto& inputNode : _inputNodes) {
-            if (vis.find(inputNode) == vis.end()) dfs(inputNode);
+            if (vis.find(inputNode) == vis.end())
+                dfs(inputNode);
         }
     }
 
@@ -328,7 +325,8 @@ public:
         for (auto& v : _inputNodes) {
             qu.emplace(v);
             processed.emplace(v);
-            for (auto& k : v->_nextNodes) k->parentEnqueued();
+            for (auto& k : v->_nextNodes)
+                k->parentEnqueued();
         }
 
         while (!qu.empty()) {
@@ -340,7 +338,8 @@ public:
                     nextNode->allParentEnqueued()) {
                     qu.emplace(nextNode);
                     processed.emplace(nextNode);
-                    for (auto& v : nextNode->_nextNodes) v->parentEnqueued();
+                    for (auto& v : nextNode->_nextNodes)
+                        v->parentEnqueued();
                 }
             }
         }

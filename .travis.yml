@@ -1,0 +1,21 @@
+language: cpp
+os:
+  - linux
+compiler:
+  - gcc
+matrix:
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-7
+      env:
+        - MATRIX_EVAL="CC=gcc-7 && CXX=g++-7"
+
+before_install:
+    - eval "${MATRIX_EVAL}"
+
+install: sh scripts/install_deps.sh 
+script: sh scripts/travis_ci.sh

@@ -15,50 +15,47 @@ key="$1"
 case $key in
     -h|--help)
     print_help
-    shift # past argument
-    shift # past value
+    shift 
+    shift 
     ;;
     -f|--format)
     echo "Formatting the code"
-    # clang-format -i test.cpp
-    # clang-format -i benchmark.cpp
-    # clang-format -i graphex.hpp
     find ./ -iname "*.hpp" -o -iname "*.cpp" | xargs clang-format -i
-    shift # past argument
-    shift # past value
+    shift 
+    shift 
     ;;
     -c|--clean)
     echo "Cleaning builds"
     rm -rf build
-    shift # past argument
-    shift # past value
+    shift 
+    shift 
     ;;
     -rt|--run_test)
     echo "Running test"
-    set -a # automatically export all variables
+    set -a 
     cd build && ./graph_test
     set +a
-    shift # past argument
-    shift # past value
+    shift 
+    shift  
     ;;
     -b|--build)
     echo "Building the project"
     mkdir -p build
-    cd build && cmake -GNinja -DCMAKE_BUILD_TYPE=Release .. && ninja -j8
-    shift # past argument
-    shift # past value
+    cd build && cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DRUN_BENCHMARK=ON .. && ninja -j8
+    shift 
+    shift 
     ;;
     -bm)
     echo "Running the benchmark"
-    set -a # automatically export all variables
+    set -a 
     cd build && ./bmark
     set +a
-    shift # past argument
-    shift # past value
+    shift 
+    shift 
     ;;
     *)    # unknown option
     POSITIONAL+=("$1") # save it in an array for later
-    shift # past argument
+    shift 
     ;;
 esac
 done
