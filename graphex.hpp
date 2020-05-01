@@ -13,6 +13,8 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include <list>
+#include <mutex>
 
 #ifdef USE_BOOST_LOCKLESS_Q
 #include "cptl.hpp"
@@ -32,16 +34,20 @@ namespace GE {
 
 class BaseNode {
 public:
-    virtual void execute() = 0;
+    BaseNode(const char* name) noexcept
+        : _name(name)
+    {}
+    virtual ~BaseNode() noexcept = default;
 
+    virtual void execute() = 0;
     /// @brief markAsOutput mark the node as output node and preserve the
     /// value returned by the _task function. If a node is not marked as output
     /// node, there is no guarantee The result retrieved from the node is valid
     virtual void markAsOutput() { _isOutput = true; }
-
-    virtual bool allParentEnqueued() { return false; }
-    virtual void parentEnqueued() = 0;
+    virtual size_t getPendingCount() const = 0;
     virtual void reset() = 0;
+
+    const std::string& getName() const { return _name; }
 
     /// _nextNodes contains the child nodes for current node. Those are nodes
     /// which are signal upon the completion of the _task in current nnode
@@ -49,14 +55,19 @@ public:
 
 protected:
     bool _isOutput = false;
+    std::string _name;
 };
+
+class GraphEx;
 
 template <typename TaskCallback, typename... Args>
 class Node final : public BaseNode {
     friend class GraphEx;
 
 public:
+    using NodeType = Node<TaskCallback, Args...>;
     using ReturnType = std::invoke_result_t<TaskCallback, Args...>;
+    using ArgsStorage = std::tuple<Args...>;
     using ResultStorage =
         typename std::conditional_t<!std::is_void_v<ReturnType>,
                                     ReturnType,
@@ -69,7 +80,14 @@ public:
                                     std::false_type>)>;
     using SubscribeNoArgCallback = std::function<void(void)>;
 
-    Node(TaskCallback task) : _task(task) {}
+    Node(GraphEx* executor, TaskCallback task, const char* name)
+        : BaseNode(name)
+        , _task(task)
+        , _executor(executor)
+    {}
+    ~Node() noexcept = default;
+
+    virtual size_t getPendingCount() const final { return _pendingCount; }
 
     /// @brief setParent add a node as a prequel to current node, and the
     /// result of parent node will be passed or consumed by current node once
@@ -90,15 +108,15 @@ public:
     /// ```
     /// @param parent parent node to be added
     template <std::size_t idx, typename ParentTask>
-    void setParent(ParentTask& parent)
+    void setParent(ParentTask* parent)
     {
         static_assert(
             !std::is_same_v<typename ParentTask::ReturnType, void>,
             "Could not record result of a function that returns void as "
             "an argument for this task");
-        parent.addChild(std::bind(
+        parent->addChild(std::bind(
             &Node::onArgumentReady<idx>, this, std::placeholders::_1));
-        parent._nextNodes.emplace_back(this);
+        parent->_nextNodes.emplace_back(this);
     }
 
     /// @brief setParent add a node as a prequel to current node. The parent
@@ -111,54 +129,20 @@ public:
     /// ```
     /// @param parent parent node to be added
     template <typename ParentTask>
-    void setParent(ParentTask& parent)
+    void setParent(ParentTask* parent)
     {
-        addParentCount();
+        incrementParentCount();
         SubscribeNoArgCallback cb = std::bind(
             static_cast<void (Node::*)(void)>(&Node::onArgumentReady), this);
-        parent.addChild(cb);
-        parent._nextNodes.emplace_back(this);
+        parent->addChild(cb);
+        parent->_nextNodes.emplace_back(this);
     }
 
     /// @brief Run the main _task registered by current node
     /// After the _task is finish, call the registered callback functions
     /// @throw if `ReturnType` is non-copyable but there are more than 1 child
     /// tasks that require the result object
-    virtual void execute() override
-    {
-        // wait for result to be ready
-        // clang-format off
-        while (_pendingCount > 0);
-        // clang-format on
-        if constexpr (std::is_void_v<ReturnType>) {
-            if constexpr (!std::is_copy_constructible<decltype(_args)>::value) {
-                std::apply(_task, std::move(_args));
-            }
-            else
-                std::apply(_task, _args);
-        }
-        else {
-            if constexpr (!std::is_copy_constructible<ReturnType>::value) {
-                GE_ENFORCE(_childTasks.size() <= 1,
-                           "Internal Error: More than 1 child process for "
-                           "non-copyable object");
-                _result = std::apply(_task, std::move(_args));
-                if (!_childTasks.empty()) {
-                    _childTasks[0](std::move(_result.value()));
-                    _result.reset();
-                }
-            }
-            else {
-                _result = std::apply(_task, _args);
-                for (size_t i = 0; i < _childTasks.size(); ++i) {
-                    _childTasks[i](_result.value());
-                }
-            }
-        }
-
-        for (auto childTask : _noArgChildTasks)
-            childTask();
-    }
+    virtual void execute() override;
 
     /// @brief Retrieve the result obtained by the current node _task
     /// @throw std::runtime_error if No valid result can be retrieved in the
@@ -202,67 +186,72 @@ public:
         _noArgChildTasks.push_back(child);
     }
 
-private:
-    virtual void parentEnqueued() override { ++_parentEnqueued; }
-    virtual bool allParentEnqueued() override
-    {
-        return _parentEnqueued == _parentCount;
-    }
-    void addParentCount()
-    {
-        ++_parentCount;
-        ++_pendingCount;
-    }
-    virtual void reset() override
+    virtual void reset() final
     {
         _result.reset();
         _pendingCount = _parentCount;
-        _parentEnqueued = 0;
     }
+
+private:
+    void incrementParentCount()
+    {
+        _parentCount++;
+        _pendingCount++;
+    }
+
     /// @brief A register function that can be used to register callback when
     /// parent nodes have finish running
     template <std::size_t idx>
     void onArgumentReady(
-        decltype(std::get<idx>(std::declval<std::tuple<Args...>>())) arg)
-    {
-        if constexpr (!std::is_copy_constructible<decltype(arg)>::value) {
-            std::get<idx>(_args) = std::move(arg);
-        }
-        else
-            std::get<idx>(_args) = arg;
-        --_pendingCount;
-    }
-
-    void onArgumentReady() { --_pendingCount; }
+        decltype(std::get<idx>(std::declval<ArgsStorage>())) arg);
+    void onArgumentReady();
 
     TaskCallback _task;
-    std::tuple<Args...> _args;
+    ArgsStorage _args;
     std::optional<ResultStorage> _result;
 
-    size_t _parentEnqueued = 0;
+    size_t _parentCount =
+        std::tuple_size<ArgsStorage>::value;
     std::atomic<size_t> _pendingCount =
-        std::tuple_size<std::tuple<Args...>>::value;
-    size_t _parentCount = std::tuple_size<std::tuple<Args...>>::value;
+        std::tuple_size<ArgsStorage>::value;
 
     std::vector<SubscribeCallback> _childTasks;
     std::vector<SubscribeNoArgCallback> _noArgChildTasks;
+
+    GraphEx* _executor;
 };
 
 class GraphEx {
 public:
     GraphEx(size_t concurrency = 1) noexcept : _pool(concurrency) {}
 
-    /// @brief register entry point for the graph
     template <typename ReturnType, typename... Args>
-    void registerInputNode(Node<ReturnType, Args...>* node)
+    Node<std::function<ReturnType(Args...)>, Args...>* makeNode(std::function<ReturnType(Args...)> func, const char* name = "")
     {
-        _inputNodes.emplace_back(node);
+        _nodes.emplace_back(
+            std::make_unique<Node<std::function<ReturnType(Args...)>, Args...>>(
+                this, func, name)
+        );
+        return static_cast<Node<std::function<ReturnType(Args...)>, Args...>*>(_nodes.back().get());
     }
 
     template <typename... Args>
-    void registerInputNode(Node<Args...>* node)
+    Node<std::function<void(Args...)>, Args...>* makeNode(std::function<void(Args...)> func, const char* name = "")
     {
-        _inputNodes.emplace_back(node);
+        _nodes.emplace_back(
+            std::make_unique<Node<std::function<void(Args...)>, Args...>>(
+                this, func, name)
+        );
+        return static_cast<Node<std::function<void(Args...)>, Args...>*>(_nodes.back().get());
+    }
+
+    Node<std::function<void()>>* makeNode(std::function<void()> func, const char* name = "")
+    {
+        _nodes.emplace_back(
+            std::make_unique<Node<std::function<void()>>>(
+                this, func, name)
+        );
+        return static_cast<Node<std::function<void()>>*>(_nodes.back().get());
     }
 
     /// @brief check for cycle in the graph
@@ -286,9 +275,9 @@ public:
             col[currentNode] = false;
             return false;
         };
-        for (auto& inputNode : _inputNodes) {
+        for (auto& node : _nodes) {
             col.clear();
-            if (dfs(inputNode)) {
+            if (dfs(node.get())) {
                 return true;
             }
         }
@@ -309,63 +298,101 @@ public:
             }
             return false;
         };
-        for (auto& inputNode : _inputNodes) {
-            if (vis.find(inputNode) == vis.end())
-                dfs(inputNode);
+        for (auto& node : _nodes) {
+            if (vis.find(node.get()) == vis.end())
+                dfs(node.get());
         }
+        _finishedCount = 0;
     }
 
     /// @brief run the graph execution from input nodes
     void execute()
     {
-        // create thread _pool with 4 worker threads
-        std::unordered_set<BaseNode*> processed;
-        std::queue<BaseNode*> qu;
-
-        for (auto& v : _inputNodes) {
-            qu.emplace(v);
-            processed.emplace(v);
-            for (auto& k : v->_nextNodes)
-                k->parentEnqueued();
-        }
-
-        while (!qu.empty()) {
-            decltype(auto) nxt = qu.front();
-            qu.pop();
-            _pool.push(std::bind(&BaseNode::execute, nxt));
-            for (auto& nextNode : nxt->_nextNodes) {
-                if (processed.find(nextNode) == processed.end() &&
-                    nextNode->allParentEnqueued()) {
-                    qu.emplace(nextNode);
-                    processed.emplace(nextNode);
-                    for (auto& v : nextNode->_nextNodes)
-                        v->parentEnqueued();
-                }
-            }
-        }
+        std::vector<BaseNode*> initialNodes;
+        for (auto& nodePtr : _nodes)
+            if (!nodePtr->getPendingCount())
+                initialNodes.push_back(nodePtr.get());
+        for (auto* initialNode : initialNodes)
+            _pool.push(std::bind(&BaseNode::execute, initialNode));
         _pool.stop(true);
+    }
+
+    template <typename NodeType>
+    void executeSingleNode(NodeType* node)
+    {
+        _pool.push(std::bind(&NodeType::execute, node));
+    }
+    void onSingleNodeCompleted()
+    {
+        ++_finishedCount;
     }
 
 private:
     ctpl::thread_pool _pool;
-    std::vector<BaseNode*> _inputNodes;
+    std::list<std::unique_ptr<BaseNode>> _nodes;
+    std::atomic<size_t> _finishedCount = 0;
 };
 
-template <typename ReturnType, typename... Args>
-decltype(auto) makeNode(std::function<ReturnType(Args...)> func)
+template <typename TaskCallback, typename... Args>
+template <std::size_t idx>
+void Node<TaskCallback, Args...>::onArgumentReady(
+    decltype(std::get<idx>(std::declval<std::tuple<Args...>>())) arg)
 {
-    return Node<std::function<ReturnType(Args...)>, Args...>(func);
+    if constexpr (!std::is_copy_constructible<decltype(arg)>::value) {
+        std::get<idx>(_args) = std::move(arg);
+    }
+    else
+        std::get<idx>(_args) = arg;
+
+    if (--_pendingCount == 0)
+        _executor->executeSingleNode(this);
 }
 
-template <typename... Args>
-decltype(auto) makeNode(std::function<void(Args...)> func)
+template <typename TaskCallback, typename... Args>
+void Node<TaskCallback, Args...>::onArgumentReady()
 {
-    return Node<std::function<void(Args...)>, Args...>(func);
+    if (--_pendingCount == 0)
+        _executor->executeSingleNode(this);
 }
 
-decltype(auto) makeNode(std::function<void()> func)
+template <typename TaskCallback, typename... Args>
+void Node<TaskCallback, Args...>::execute()
 {
-    return Node<std::function<void()>>(func);
+    // wait for result to be ready
+    // clang-format off
+    while (_pendingCount > 0);
+    // clang-format on
+    if constexpr (std::is_void_v<ReturnType>) {
+        if constexpr (!std::is_copy_constructible<decltype(_args)>::value) {
+            std::apply(_task, std::move(_args));
+        }
+        else
+            std::apply(_task, _args);
+    }
+    else {
+        if constexpr (!std::is_copy_constructible<ReturnType>::value) {
+            GE_ENFORCE(_childTasks.size() <= 1,
+                        "Internal Error: More than 1 child process for "
+                        "non-copyable object"); // TODO: should just fail brutally here
+            _result = std::apply(_task, std::move(_args));
+            if (!_childTasks.empty()) {
+                _childTasks[0](std::move(_result.value()));
+                _result.reset();
+            }
+        }
+        else {
+            _result = std::apply(_task, _args);
+            for (size_t i = 0; i < _childTasks.size(); ++i) {
+                _childTasks[i](_result.value());
+            }
+        }
+    }
+
+    for (auto childTask : _noArgChildTasks)
+        childTask();
+
+    // Execution completed here
+    _executor->onSingleNodeCompleted();
 }
 
 }  // namespace GE
