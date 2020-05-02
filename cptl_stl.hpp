@@ -124,6 +124,12 @@ public:
         }
     }
 
+    void reset()
+    {
+        this->init();
+        this->resize(this->threads.capacity());
+    }
+
     // empty the queue
     void clear_queue()
     {

@@ -471,10 +471,43 @@ TEST_F(GraphExTest, ShouldBeAbleToRunConcurrentlyCorrectly2)
     sixth->setParent<1>(third);
     sixth->setParent<2>(fourth);
     sixth->setParent<3>(fifth);
-    sixth->markAsOutput();
 
     executor.execute();
     EXPECT_EQ(sixth->collect(), 123235512);
+}
+
+TEST_F(GraphExTest, ResetAndExecuteRepeatedly)
+{
+    GraphEx executor;
+
+    decltype(auto) first =
+        executor.makeNode([]() -> void { std::cout << "Running first\n"; });
+    // Need to explicitly set this one or compiler wont be able to deduce
+    // whether this is makeNode<void, Args..> or makeNode<ReturnType, ...>
+    std::function<int(void)> secondFunc = []() -> int { return 1; };
+    decltype(auto) second = executor.makeNode(secondFunc);
+    std::function<int(int)> thirdFunc = [](int a) -> int { return a + 2; };
+    decltype(auto) third = executor.makeNode(thirdFunc);
+    std::function<int(int)> fourthFunc = [](int a) -> int { return a * 2; };
+    decltype(auto) fourth = executor.makeNode(fourthFunc);
+    std::function<int(int, int)> fifthFunc = [](int a, int b) -> int { return a % b; };
+    decltype(auto) fifth = executor.makeNode(fifthFunc);
+
+    second->setParent(first);
+    third->setParent<0>(second);
+    fourth->setParent<0>(second);
+    fifth->setParent<0>(third);
+    fifth->setParent<1>(fourth);
+
+    for (uint8_t i = 0; i < 2; ++i)
+    {
+        EXPECT_FALSE(executor.hasCycle());
+        executor.execute();
+        EXPECT_EQ(third->collect(), 3);
+        EXPECT_EQ(fourth->collect(), 2);
+        EXPECT_EQ(fifth->collect(), 1);
+        executor.reset();
+    }
 }
 
 auto main(int argc, char** argv) -> int

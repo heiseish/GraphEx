@@ -303,6 +303,7 @@ public:
                 dfs(node.get());
         }
         _finishedCount = 0;
+        _pool.reset();
     }
 
     /// @brief run the graph execution from input nodes
