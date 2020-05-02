@@ -163,7 +163,6 @@ TEST_F(GraphExTest, ShouldBeAbleToHandleMovableObjectCorrectly)
 
         second->setParent(preprocess);
         second->setParent<0>(first);
-        second->markAsOutput();
 
         executor.execute();
         auto initial_input = first->collect();
@@ -187,8 +186,6 @@ TEST_F(GraphExTest, ShouldBeAbleToHandleMovableObjectCorrectly)
 
         second->setParent(preprocess);
         second->setParent<0>(first);
-        second->markAsOutput();
-        first->markAsOutput();
 
         executor.execute();
         auto final_output = second->collect();
@@ -215,7 +212,6 @@ TEST_F(GraphExTest, ShouldBeAbleToHandleNonCopyableStruct)
     decltype(auto) second = executor.makeNode(secondFunc);
 
     second->setParent<0>(first);
-    second->markAsOutput();
 
     executor.execute();
     std::cout << "Done running\n";
@@ -283,7 +279,6 @@ TEST_F(GraphExTest, ShouldBeAbleToAddStructMethod)
     decltype(auto) second = executor.makeNode(secondFunc);
 
     second->setParent<0>(first);
-    second->markAsOutput();
 
     executor.execute();
 

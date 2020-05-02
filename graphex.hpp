@@ -40,10 +40,6 @@ public:
     virtual ~BaseNode() noexcept = default;
 
     virtual void execute() = 0;
-    /// @brief markAsOutput mark the node as output node and preserve the
-    /// value returned by the _task function. If a node is not marked as output
-    /// node, there is no guarantee The result retrieved from the node is valid
-    virtual void markAsOutput() { _isOutput = true; }
     virtual size_t getPendingCount() const = 0;
     virtual void reset() = 0;
 
@@ -54,7 +50,6 @@ public:
     std::vector<BaseNode*> _nextNodes;
 
 protected:
-    bool _isOutput = false;
     std::string _name;
 };
 
@@ -151,6 +146,9 @@ public:
     {
         GE_ENFORCE(_result, "No result found in node");
         if constexpr (!std::is_copy_constructible<ReturnType>::value) {
+            GE_ENFORCE(_childTasks.empty(),
+                       "Non copyable result could not be collected: "
+                       "moved to parameters of child tasks");
             return std::move(_result.value());
         }
         else {
@@ -166,9 +164,6 @@ public:
     void addChild(SubscribeCallback child)
     {
         if constexpr (!std::is_copy_constructible<ReturnType>::value) {
-            GE_ENFORCE(!_isOutput,
-                       "Non copyable result which has been marked as output "
-                       "cannot have children");
             GE_ENFORCE(
                 _childTasks.empty(),
                 "Non copyable result cannot be passed to more than 1 child "
