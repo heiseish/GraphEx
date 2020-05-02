@@ -16,19 +16,20 @@ std::function<int(int, int)> fifthFunc = [](int a, int b) -> int {
 static void BM_GraphEX(benchmark::State& state)
 {
     for (auto _ : state) {
-        decltype(auto) first = makeNode(firstFunc);
-        decltype(auto) second = makeNode(secondFunc);
-        decltype(auto) third = makeNode(thirdFunc);
-        decltype(auto) fourth = makeNode(fourthFunc);
-        decltype(auto) fifth = makeNode(fifthFunc);
-
-        second.setParent(first);
-        third.setParent<0>(second);
-        fourth.setParent<0>(second);
-        fifth.setParent<0>(third);
-        fifth.setParent<1>(fourth);
         GraphEx executor;
-        executor.registerInputNode(&first);
+
+        decltype(auto) first = executor.makeNode(firstFunc);
+        decltype(auto) second = executor.makeNode(secondFunc);
+        decltype(auto) third = executor.makeNode(thirdFunc);
+        decltype(auto) fourth = executor.makeNode(fourthFunc);
+        decltype(auto) fifth = executor.makeNode(fifthFunc);
+
+        second->setParent(first);
+        third->setParent<0>(second);
+        fourth->setParent<0>(second);
+        fifth->setParent<0>(third);
+        fifth->setParent<1>(fourth);
+
         executor.execute();
     }
 }
@@ -108,19 +109,20 @@ auto sixCostlyFunc(int a, int b, int c, int d) -> int
 static void BM_GraphEX_Expensive(benchmark::State& state)
 {
     for (auto _ : state) {
-        decltype(auto) first = makeNode(firstCostlyFunc);
-        decltype(auto) second = makeNode(secondCostlyFunc);
-        decltype(auto) third = makeNode(thirdCostlyFunc);
-        decltype(auto) fourth = makeNode(fourthCostlyFunc);
-        decltype(auto) fifth = makeNode(fifthCostlyFunc);
-
-        second.setParent(first);
-        third.setParent<0>(second);
-        fourth.setParent<0>(second);
-        fifth.setParent<0>(third);
-        fifth.setParent<1>(fourth);
         GraphEx executor;
-        executor.registerInputNode(&first);
+
+        decltype(auto) first = executor.makeNode(firstCostlyFunc);
+        decltype(auto) second = executor.makeNode(secondCostlyFunc);
+        decltype(auto) third = executor.makeNode(thirdCostlyFunc);
+        decltype(auto) fourth = executor.makeNode(fourthCostlyFunc);
+        decltype(auto) fifth = executor.makeNode(fifthCostlyFunc);
+
+        second->setParent(first);
+        third->setParent<0>(second);
+        fourth->setParent<0>(second);
+        fifth->setParent<0>(third);
+        fifth->setParent<1>(fourth);
+
         executor.execute();
     }
 }
@@ -140,26 +142,26 @@ BENCHMARK(BM_FunctionCall_Expensive);
 
 static void BM_GraphEX_Expensive_Parallel(benchmark::State& state)
 {
-    decltype(auto) first = makeNode(secondCostlyFunc);
-    decltype(auto) second = makeNode(thirdCostlyFunc);
-    decltype(auto) third = makeNode(thirdCostlyFunc);
-    decltype(auto) fourth = makeNode(fourthCostlyFunc);
-    decltype(auto) fifth = makeNode(fourthCostlyFunc);
-    std::function<int(int, int, int, int)> ss = sixCostlyFunc;
-    decltype(auto) sixth = makeNode(ss);
-
-    second.setParent<0>(first);
-    third.setParent<0>(first);
-    fourth.setParent<0>(first);
-    fifth.setParent<0>(first);
-
-    sixth.setParent<0>(second);
-    sixth.setParent<1>(third);
-    sixth.setParent<2>(fourth);
-    sixth.setParent<3>(fifth);
-
     GraphEx executor(4);
-    executor.registerInputNode(&first);
+
+    decltype(auto) first = executor.makeNode(secondCostlyFunc);
+    decltype(auto) second = executor.makeNode(thirdCostlyFunc);
+    decltype(auto) third = executor.makeNode(thirdCostlyFunc);
+    decltype(auto) fourth = executor.makeNode(fourthCostlyFunc);
+    decltype(auto) fifth = executor.makeNode(fourthCostlyFunc);
+    std::function<int(int, int, int, int)> ss = sixCostlyFunc;
+    decltype(auto) sixth = executor.makeNode(ss);
+
+    second->setParent<0>(first);
+    third->setParent<0>(first);
+    fourth->setParent<0>(first);
+    fifth->setParent<0>(first);
+
+    sixth->setParent<0>(second);
+    sixth->setParent<1>(third);
+    sixth->setParent<2>(fourth);
+    sixth->setParent<3>(fifth);
+
     for (auto _ : state) {
         executor.execute();
         executor.reset();
