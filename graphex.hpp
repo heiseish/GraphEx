@@ -40,10 +40,6 @@ public:
     virtual ~BaseNode() noexcept = default;
 
     virtual void execute() = 0;
-    /// @brief markAsOutput mark the node as output node and preserve the
-    /// value returned by the _task function. If a node is not marked as output
-    /// node, there is no guarantee The result retrieved from the node is valid
-    virtual void markAsOutput() { _isOutput = true; }
     virtual size_t getPendingCount() const = 0;
     virtual void reset() = 0;
 
@@ -54,7 +50,6 @@ public:
     std::vector<BaseNode*> _nextNodes;
 
 protected:
-    bool _isOutput = false;
     std::string _name;
 };
 
@@ -151,6 +146,9 @@ public:
     {
         GE_ENFORCE(_result, "No result found in node");
         if constexpr (!std::is_copy_constructible<ReturnType>::value) {
+            GE_ENFORCE(_childTasks.empty(),
+                       "Non copyable result could not be collected: "
+                       "moved to parameters of child tasks");
             return std::move(_result.value());
         }
         else {
@@ -166,9 +164,6 @@ public:
     void addChild(SubscribeCallback child)
     {
         if constexpr (!std::is_copy_constructible<ReturnType>::value) {
-            GE_ENFORCE(!_isOutput,
-                       "Non copyable result which has been marked as output "
-                       "cannot have children");
             GE_ENFORCE(
                 _childTasks.empty(),
                 "Non copyable result cannot be passed to more than 1 child "
@@ -191,6 +186,33 @@ public:
         _result.reset();
         _pendingCount = _parentCount;
     }
+    
+    /// @brief manually inject parameter for a single node
+    /// CAUTION: This function should not be used with parameters who are
+    /// expected to be transacted within the graph
+    ///
+    /// For example if we have 2 nodes
+    /// nodeA: funcA = () -> int a
+    /// nodeB: funcB = (int a, int b) -> void
+    /// and nodeB->setParent<0>(nodeA)
+    /// we cannot manually inject the first parameter for nodeB, since that
+    /// parameter is expected to come from A. What we could do is to inject the
+    /// second parameter by nodeB->feed<1>(param) template @param idx order of
+    /// the param to be injected
+    /// @param arg arg to be injected
+    template <size_t idx, typename ParamType>
+    void feed(ParamType arg)
+    {
+        if constexpr (!std::is_copy_constructible<ParamType>::value ||
+                      std::is_move_constructible<ParamType>::value) {
+            std::get<idx>(_args) = std::move(arg);
+        }
+        else
+            std::get<idx>(_args) = arg;
+
+        --_pendingCount;
+    }
+
 
 private:
     void incrementParentCount()
@@ -314,7 +336,10 @@ public:
                 initialNodes.push_back(nodePtr.get());
         for (auto* initialNode : initialNodes)
             _pool.push(std::bind(&BaseNode::execute, initialNode));
-        _pool.stop(true);
+        {
+            std::unique_lock<std::mutex> lock(_mutex);
+            _cv.wait(lock, [this](){ return _finishedCount == _nodes.size(); });
+        }
     }
 
     template <typename NodeType>
@@ -324,13 +349,18 @@ public:
     }
     void onSingleNodeCompleted()
     {
+        std::unique_lock<std::mutex> lock(_mutex);
         ++_finishedCount;
+        _cv.notify_all();
     }
 
 private:
     ctpl::thread_pool _pool;
     std::list<std::unique_ptr<BaseNode>> _nodes;
-    std::atomic<size_t> _finishedCount = 0;
+
+    size_t _finishedCount = 0;
+    std::mutex _mutex;
+    std::condition_variable _cv;
 };
 
 template <typename TaskCallback, typename... Args>

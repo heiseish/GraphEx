@@ -163,7 +163,6 @@ TEST_F(GraphExTest, ShouldBeAbleToHandleMovableObjectCorrectly)
 
         second->setParent(preprocess);
         second->setParent<0>(first);
-        second->markAsOutput();
 
         executor.execute();
         auto initial_input = first->collect();
@@ -187,8 +186,6 @@ TEST_F(GraphExTest, ShouldBeAbleToHandleMovableObjectCorrectly)
 
         second->setParent(preprocess);
         second->setParent<0>(first);
-        second->markAsOutput();
-        first->markAsOutput();
 
         executor.execute();
         auto final_output = second->collect();
@@ -215,7 +212,6 @@ TEST_F(GraphExTest, ShouldBeAbleToHandleNonCopyableStruct)
     decltype(auto) second = executor.makeNode(secondFunc);
 
     second->setParent<0>(first);
-    second->markAsOutput();
 
     executor.execute();
     std::cout << "Done running\n";
@@ -283,7 +279,6 @@ TEST_F(GraphExTest, ShouldBeAbleToAddStructMethod)
     decltype(auto) second = executor.makeNode(secondFunc);
 
     second->setParent<0>(first);
-    second->markAsOutput();
 
     executor.execute();
 
@@ -471,11 +466,75 @@ TEST_F(GraphExTest, ShouldBeAbleToRunConcurrentlyCorrectly2)
     sixth->setParent<1>(third);
     sixth->setParent<2>(fourth);
     sixth->setParent<3>(fifth);
-    sixth->markAsOutput();
 
     executor.execute();
     EXPECT_EQ(sixth->collect(), 123235512);
 }
+
+TEST_F(GraphExTest, ResetAndExecuteRepeatedly)
+{
+    GraphEx executor;
+
+    decltype(auto) first =
+        executor.makeNode([]() -> void { std::cout << "Running first\n"; });
+    // Need to explicitly set this one or compiler wont be able to deduce
+    // whether this is makeNode<void, Args..> or makeNode<ReturnType, ...>
+    std::function<int(void)> secondFunc = []() -> int { return 1; };
+    decltype(auto) second = executor.makeNode(secondFunc);
+    std::function<int(int)> thirdFunc = [](int a) -> int { return a + 2; };
+    decltype(auto) third = executor.makeNode(thirdFunc);
+    std::function<int(int)> fourthFunc = [](int a) -> int { return a * 2; };
+    decltype(auto) fourth = executor.makeNode(fourthFunc);
+    std::function<int(int, int)> fifthFunc = [](int a, int b) -> int { return a % b; };
+    decltype(auto) fifth = executor.makeNode(fifthFunc);
+
+    second->setParent(first);
+    third->setParent<0>(second);
+    fourth->setParent<0>(second);
+    fifth->setParent<0>(third);
+    fifth->setParent<1>(fourth);
+
+    for (uint8_t i = 0; i < 2; ++i)
+    {
+        EXPECT_FALSE(executor.hasCycle());
+        executor.execute();
+        EXPECT_EQ(third->collect(), 3);
+        EXPECT_EQ(fourth->collect(), 2);
+        EXPECT_EQ(fifth->collect(), 1);
+        executor.reset();
+    }
+}
+
+
+TEST_F(GraphExTest, ShouldBeAbleToInjectParameterManually)
+{
+    GraphEx executor;
+    std::function<int(int)> secondFunc = [](int a) -> int { return a; };
+    decltype(auto) second = executor.makeNode(secondFunc);
+    std::function<int(int)> thirdFunc = [](int a) -> int { return a + 2; };
+    decltype(auto) third = executor.makeNode(thirdFunc);
+    std::function<int(int)> fourthFunc = [](int a) -> int { return a * 2; };
+    decltype(auto) fourth = executor.makeNode(fourthFunc);
+    std::function<int(int, int)> fifthFunc = [](int a, int b) -> int {
+        return a % b;
+    };
+    decltype(auto) fifth = executor.makeNode(fifthFunc);
+
+    third->setParent<0>(second);
+    fourth->setParent<0>(second);
+    fifth->setParent<0>(third);
+    fifth->setParent<1>(fourth);
+
+    second->feed<0>(10);
+    executor.execute();
+    EXPECT_EQ(fifth->collect(), 12);
+
+    executor.reset();
+    second->feed<0>(20);
+    executor.execute();
+    EXPECT_EQ(fifth->collect(), 22);
+}
+
 
 auto main(int argc, char** argv) -> int
 {

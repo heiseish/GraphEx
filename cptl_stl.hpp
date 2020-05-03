@@ -70,15 +70,17 @@ private:
 
 class thread_pool {
 public:
-    thread_pool() { this->init(); }
-    thread_pool(int nThreads)
+    thread_pool() noexcept = default;
+    thread_pool(int nThreads) noexcept
     {
-        this->init();
-        this->resize(nThreads);
+        this->threads.resize(nThreads);
+        for (int i = 0; i < nThreads; ++i) {
+            this->set_thread(i);
+        }
     }
 
     // the destructor waits for all the functions in the queue to be finished
-    ~thread_pool() { this->stop(true); }
+    ~thread_pool() { this->stop(); }
 
     // get the number of running threads in the pool
     int size() { return static_cast<int>(this->threads.size()); }
@@ -86,43 +88,6 @@ public:
     // number of idle threads
     int n_idle() { return this->nWaiting; }
     std::thread &get_thread(int i) { return *this->threads[i]; }
-
-    // change the number of threads in the pool
-    // should be called from one thread, otherwise be careful to not interleave,
-    // also with this->stop() nThreads must be >= 0
-    void resize(int nThreads)
-    {
-        if (!this->isStop && !this->isDone) {
-            int oldNThreads = static_cast<int>(this->threads.size());
-            if (oldNThreads <=
-                nThreads) {  // if the number of threads is increased
-                this->threads.resize(nThreads);
-                this->flags.resize(nThreads);
-
-                for (int i = oldNThreads; i < nThreads; ++i) {
-                    this->flags[i] = std::make_shared<std::atomic<bool>>(false);
-                    this->set_thread(i);
-                }
-            }
-            else {  // the number of threads is decreased
-                for (int i = oldNThreads - 1; i >= nThreads; --i) {
-                    *this->flags[i] = true;  // this thread will finish
-                    this->threads[i]->detach();
-                }
-                {
-                    // stop the detached threads that were waiting
-                    std::unique_lock<std::mutex> lock(this->mutex);
-                    this->cv.notify_all();
-                }
-                this->threads.resize(nThreads);  // safe to delete because the
-                                                 // threads are detached
-                this->flags.resize(
-                    nThreads);  // safe to delete because the threads have
-                                // copies of shared_ptr of the flags, not
-                                // originals
-            }
-        }
-    }
 
     // empty the queue
     void clear_queue()
@@ -148,25 +113,13 @@ public:
 
     // wait for all computing threads to finish and stop all threads
     // may be called asynchronously to not pause the calling thread while
-    // waiting if isWait == true, all the functions in the queue are run,
-    // otherwise the queue is cleared without running the functions
-    void stop(bool isWait = false)
+    // waiting. All the functions in the queue are run.
+    void stop()
     {
-        if (!isWait) {
-            if (this->isStop)
-                return;
-            this->isStop = true;
-            for (int i = 0, n = this->size(); i < n; ++i) {
-                *this->flags[i] = true;  // command the threads to stop
-            }
-            this->clear_queue();  // empty the queue
-        }
-        else {
-            if (this->isDone || this->isStop)
-                return;
-            this->isDone =
-                true;  // give the waiting threads a command to finish
-        }
+        if (this->isDone)
+            return;
+        this->isDone =
+            true;  // give the waiting threads a command to finish
         {
             std::unique_lock<std::mutex> lock(this->mutex);
             this->cv.notify_all();  // stop all waiting threads
@@ -181,23 +134,6 @@ public:
         // here
         this->clear_queue();
         this->threads.clear();
-        this->flags.clear();
-    }
-
-    template <typename F, typename... Rest>
-    auto push(F &&f, Rest &&... rest) -> std::future<decltype(f(0, rest...))>
-    {
-        auto pck =
-            std::make_shared<std::packaged_task<decltype(f(0, rest...))(int)>>(
-                std::bind(std::forward<F>(f),
-                          std::placeholders::_1,
-                          std::forward<Rest>(rest)...));
-        auto _f =
-            new std::function<void(int id)>([pck](int id) { (*pck)(id); });
-        this->q.push(_f);
-        std::unique_lock<std::mutex> lock(this->mutex);
-        this->cv.notify_one();
-        return pck->get_future();
     }
 
     // run the user's function that excepts argument int - id of the running
@@ -225,10 +161,7 @@ private:
 
     void set_thread(int i)
     {
-        std::shared_ptr<std::atomic<bool>> flag(
-            this->flags[i]);  // a copy of the shared ptr to the flag
-        auto f = [this, i, flag /* a copy of the shared ptr to the flag */]() {
-            std::atomic<bool> &_flag = *flag;
+        auto f = [this, i]() {
             std::function<void(int id)> *_f;
             bool isPop = this->q.pop(_f);
             while (true) {
@@ -237,18 +170,14 @@ private:
                         _f);  // at return, delete the function even if an
                               // exception occurred
                     (*_f)(i);
-                    if (_flag)
-                        return;  // the thread is wanted to stop, return even if
-                                 // the queue is not empty yet
-                    else
-                        isPop = this->q.pop(_f);
+                    isPop = this->q.pop(_f);
                 }
                 // the queue is empty here, wait for the next command
                 std::unique_lock<std::mutex> lock(this->mutex);
                 ++this->nWaiting;
-                this->cv.wait(lock, [this, &_f, &isPop, &_flag]() {
+                this->cv.wait(lock, [this, &_f, &isPop]() {
                     isPop = this->q.pop(_f);
-                    return isPop || this->isDone || _flag;
+                    return isPop || this->isDone;
                 });
                 --this->nWaiting;
                 if (!isPop)
@@ -260,19 +189,10 @@ private:
             new std::thread(f));  // compiler may not support std::make_unique()
     }
 
-    void init()
-    {
-        this->nWaiting = 0;
-        this->isStop = false;
-        this->isDone = false;
-    }
-
     std::vector<std::unique_ptr<std::thread>> threads;
-    std::vector<std::shared_ptr<std::atomic<bool>>> flags;
     detail::Queue<std::function<void(int id)> *> q;
-    std::atomic<bool> isDone;
-    std::atomic<bool> isStop;
-    std::atomic<int> nWaiting;  // how many threads are waiting
+    std::atomic<bool> isDone = false;
+    std::atomic<int> nWaiting = 0;  // how many threads are waiting
 
     std::mutex mutex;
     std::condition_variable cv;

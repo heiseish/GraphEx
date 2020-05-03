@@ -49,7 +49,7 @@ static void BM_FunctionCall(benchmark::State& state)
 }
 BENCHMARK(BM_FunctionCall);
 
-constexpr int loop_n = 10'000;
+constexpr int loop_n = 1'000'000;
 std::function<void(void)> firstCostlyFunc = []() -> void {
     for (int i = 0; i < loop_n; ++i)
         ;
@@ -68,8 +68,8 @@ std::function<int(int)> thirdCostlyFunc = [](int a) -> int {
     return a;
 };
 std::function<int(int)> fourthCostlyFunc = [](int a) -> int {
-    for (int i = 100; i >= 0; --i) {
-        for (int j = 1; j <= 100; ++j) {
+    for (int i = 1'000; i >= 0; --i) {
+        for (int j = 1; j <= 1'000; ++j) {
             a ^= (i % j);
             ++a;
         }
@@ -193,7 +193,6 @@ static void BM_FunctionCall_Expensive_Parallel(benchmark::State& state)
         auto f4 = pool.push(std::bind(fourthCostlyFunc, res));
         sixCostlyFunc(f1.get(), f2.get(), f3.get(), f4.get());
     }
-    pool.stop();
 }
 BENCHMARK(BM_FunctionCall_Expensive_Parallel);
 

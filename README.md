@@ -13,24 +13,24 @@ Image Credit [Network Vectors by Vecteezy](https://www.vecteezy.com/free-vector/
 ### Simple example with sequential tasks
 ```C++
 using namespace GE;
+GraphEx executor(1); // set maximum number of concurrent threads running at the same time
+
 // define the tasks that need to be ran
 // below are simple tasks to be run in sequence
 // first ----> second ----> third ----> fourth
 decltype(auto) first =
-    makeNode([]() -> void { std::cout << "Running first\n"; });
+    executor.makeNode([]() -> void { std::cout << "Running first\n"; });
 decltype(auto) second =
-    makeNode([]() -> void { std::cout << "Running second\n"; });
+    executor.makeNode([]() -> void { std::cout << "Running second\n"; });
 decltype(auto) third =
-    makeNode([]() -> void { std::cout << "Running third\n"; });
+    executor.makeNode([]() -> void { std::cout << "Running third\n"; });
 decltype(auto) fourth =
-    makeNode([]() -> void { std::cout << "Running fourth\n"; });
+    executor.makeNode([]() -> void { std::cout << "Running fourth\n"; });
 
-second.setParent(first);
-third.setParent(second);
-fourth.setParent(third);
-GraphEx executor(1); // set maximum number of concurrent threads running at the same time
+second->setParent(first);
+third->setParent(second);
+fourth->setParent(third);
 
-executor.registerInputNode(&first); // register the entry points for the graph. Can be multiple
 EXPECT_FALSE(executor.hasCycle()); // Check if the dependency graph has cycle
 executor.execute();
 
@@ -44,63 +44,60 @@ Running fourth
 
 ### Example with graph with argument passing between nodes
 ```C++
+using namespace GE;
+GraphExOptions opt;
+GraphEx executor(opt);
+
 decltype(auto) first =
-    makeNode([]() -> void { std::cout << "Running first\n"; });
+    executor.makeNode([]() -> void { std::cout << "Running first\n"; });
 
 // create a function that doesn't take in anything and return 1
 std::function<int(void)> secondFunc = []() -> int {
     std::cout << "Running second\nReturn 1\n";
     return 1;
 };
-decltype(auto) second = makeNode(secondFunc);
+decltype(auto) second = executor.makeNode(secondFunc);
 
 // create a function that takes in a number and return number + 2
 std::function<int(int)> thirdFunc = [](int a) -> int {
     std::cout << "Running third\nAdding 2: a + 2 == " << a + 2 << "\n";
     return a + 2;
 };
-decltype(auto) third = makeNode(thirdFunc);
+decltype(auto) third = executor.makeNode(thirdFunc);
 
 std::function<int(int)> fourthFunc = [](int a) -> int {
     std::cout << "Running fourth\nMultiplying by 2: a * 2 == " << a * 2
                 << "\n";
     return a * 2;
 };
-decltype(auto) fourth = makeNode(fourthFunc);
+decltype(auto) fourth = executor.makeNode(fourthFunc);
 
 std::function<int(int, int)> fifthFunc = [](int a, int b) -> int {
     std::cout << "Running fifth\nModding the two numbers: a % b == "
                 << a % b << "\n";
     return a % b;
 };
-decltype(auto) fifth = makeNode(fifthFunc);
+decltype(auto) fifth = executor.makeNode(fifthFunc);
 
-second.setParent(first);
-third.setParent<0>(second);
-fourth.setParent<0>(second);
-fifth.setParent<0>(third);
-fifth.setParent<1>(fourth);
+second->setParent(first);
+third->setParent<0>(second);
+fourth->setParent<0>(second);
+fifth->setParent<0>(third);
+fifth->setParent<1>(fourth);
 
 // The data flow in graph above can be visualize as followed:
 //        void           int                  int
 // first ------> second ------->   third   -------->    fifth
 //                 |     int                  int         |
 //                 ------------>   fourth  -------------->
-GraphExOptions opt;
-GraphEx executor(opt);
-executor.registerInputNode(&first);
+
 EXPECT_FALSE(executor.hasCycle());
-
-/// mark the nodes as output to confirm the results later
-third.MarkAsOutput();
-fourth.MarkAsOutput();
-fifth.MarkAsOutput();
-
 executor.execute();
+
 // Check the result obtained from the nodes
-EXPECT_EQ(third.Collect(), 3);
-EXPECT_EQ(fourth.Collect(), 2);
-EXPECT_EQ(fifth.Collect(), 1);
+EXPECT_EQ(third->collect(), 3);
+EXPECT_EQ(fourth->collect(), 2);
+EXPECT_EQ(fifth->collect(), 1);
 /**
 Running first
 Running second
@@ -117,48 +114,54 @@ Modding the two numbers: a % b == 1
 
 ### Check if a dependency graph has cycle
 ```C++
-decltype(auto) first =
-    makeNode([]() -> void { std::cout << "Running first\n"; });
-decltype(auto) second =
-    makeNode([]() -> void { std::cout << "Running second\n"; });
-decltype(auto) third =
-    makeNode([]() -> void { std::cout << "Running third\n"; });
-decltype(auto) fourth =
-    makeNode([]() -> void { std::cout << "Running fourth\n"; });
-second.setParent(first);
-third.setParent(second);
-fourth.setParent(third);
-first.setParent(fourth);
+using namespace GE;
 GraphEx executor;
-executor.registerInputNode(&first);
+
+decltype(auto) first =
+    executor.makeNode([]() -> void { std::cout << "Running first\n"; });
+decltype(auto) second =
+    executor.makeNode([]() -> void { std::cout << "Running second\n"; });
+decltype(auto) third =
+    executor.makeNode([]() -> void { std::cout << "Running third\n"; });
+decltype(auto) fourth =
+    executor.makeNode([]() -> void { std::cout << "Running fourth\n"; });
+second->setParent(first);
+third->setParent(second);
+fourth->setParent(third);
+first->setParent(fourth);
+
 EXPECT_TRUE(executor.hasCycle()); // 1 -> 2 -> 3 -> 4 -> 1
 ```
 
 ### Usable with a wide range of `ReturnType`
 ```C++
+using namespace GE;
+GraphEx executor;
+
 using NonCopyableType = std::unique_ptr<int>;
 std::function<NonCopyableType()> firstFunc = []() -> NonCopyableType {
     return std::make_unique<int>(10);
 };
-decltype(auto) first = makeNode(firstFunc);
+decltype(auto) first = executor.makeNode(firstFunc);
 std::function<NonCopyableType(NonCopyableType)> secondFunc =
     [](NonCopyableType a) -> NonCopyableType {
     *a = 6;
     return a;
 };
-decltype(auto) second = makeNode(secondFunc);
-second.setParent<0>(first);
-second.MarkAsOutput();
-GraphEx executor;
-executor.registerInputNode(&first);
+decltype(auto) second = executor.makeNode(secondFunc);
+second->setParent<0>(first);
+
 executor.execute();
 std::cout << "Done running\n";
-auto finalOutput = second.Collect();
+auto finalOutput = second.collect();
 EXPECT_EQ(*finalOutput, 6);
 ```
 
 ### Create Node from struct/class method
 ```C++
+using namespace GE;
+GraphEx executor;
+
 struct Foo {
     auto first() -> int { return 4; }
     auto second(int x) -> int { return x * 2; }
@@ -166,19 +169,17 @@ struct Foo {
 
 Foo foo;
 std::function<int(void)> firstFunc = std::bind(&Foo::first, &foo);
-decltype(auto) first = makeNode(firstFunc);
+decltype(auto) first = executor.makeNode(firstFunc);
 
 std::function<int(int)> secondFunc =
     std::bind(&Foo::second, &foo, std::placeholders::_1);
-decltype(auto) second = makeNode(secondFunc);
+decltype(auto) second = executor.makeNode(secondFunc);
 
-second.setParent<0>(first);
-second.MarkAsOutput();
-GraphEx executor;
-executor.registerInputNode(&first);
+second->setParent<0>(first);
+
 executor.execute();
 
-EXPECT_EQ(second.Collect(), 8);
+EXPECT_EQ(second.collect(), 8);
 ```
 
 ## Installation
