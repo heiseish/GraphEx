@@ -6,6 +6,8 @@
 #include <atomic>
 #include <functional>
 #include <iostream>
+#include <list>
+#include <mutex>
 #include <optional>
 #include <queue>
 #include <type_traits>
@@ -13,8 +15,6 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
-#include <list>
-#include <mutex>
 
 #ifdef USE_BOOST_LOCKLESS_Q
 #include "cptl.hpp"
@@ -34,9 +34,7 @@ namespace GE {
 
 class BaseNode {
 public:
-    BaseNode(const char* name) noexcept
-        : _name(name)
-    {}
+    BaseNode(const char* name) noexcept : _name(name) {}
     virtual ~BaseNode() noexcept = default;
 
     virtual void execute() = 0;
@@ -76,10 +74,9 @@ public:
     using SubscribeNoArgCallback = std::function<void(void)>;
 
     Node(GraphEx* executor, TaskCallback task, const char* name)
-        : BaseNode(name)
-        , _task(task)
-        , _executor(executor)
-    {}
+        : BaseNode(name), _task(task), _executor(executor)
+    {
+    }
     ~Node() noexcept = default;
 
     virtual size_t getPendingCount() const final { return _pendingCount; }
@@ -186,7 +183,7 @@ public:
         _result.reset();
         _pendingCount = _parentCount;
     }
-    
+
     /// @brief manually inject parameter for a single node
     /// CAUTION: This function should not be used with parameters who are
     /// expected to be transacted within the graph
@@ -213,7 +210,6 @@ public:
         --_pendingCount;
     }
 
-
 private:
     void incrementParentCount()
     {
@@ -232,10 +228,8 @@ private:
     ArgsStorage _args;
     std::optional<ResultStorage> _result;
 
-    size_t _parentCount =
-        std::tuple_size<ArgsStorage>::value;
-    std::atomic<size_t> _pendingCount =
-        std::tuple_size<ArgsStorage>::value;
+    size_t _parentCount = std::tuple_size<ArgsStorage>::value;
+    std::atomic<size_t> _pendingCount = std::tuple_size<ArgsStorage>::value;
 
     std::vector<SubscribeCallback> _childTasks;
     std::vector<SubscribeNoArgCallback> _noArgChildTasks;
@@ -248,31 +242,34 @@ public:
     GraphEx(size_t concurrency = 1) noexcept : _pool(concurrency) {}
 
     template <typename ReturnType, typename... Args>
-    Node<std::function<ReturnType(Args...)>, Args...>* makeNode(std::function<ReturnType(Args...)> func, const char* name = "")
+    Node<std::function<ReturnType(Args...)>, Args...>* makeNode(
+        std::function<ReturnType(Args...)> func,
+        const char* name = "")
     {
         _nodes.emplace_back(
             std::make_unique<Node<std::function<ReturnType(Args...)>, Args...>>(
-                this, func, name)
-        );
-        return static_cast<Node<std::function<ReturnType(Args...)>, Args...>*>(_nodes.back().get());
+                this, func, name));
+        return static_cast<Node<std::function<ReturnType(Args...)>, Args...>*>(
+            _nodes.back().get());
     }
 
     template <typename... Args>
-    Node<std::function<void(Args...)>, Args...>* makeNode(std::function<void(Args...)> func, const char* name = "")
+    Node<std::function<void(Args...)>, Args...>* makeNode(
+        std::function<void(Args...)> func,
+        const char* name = "")
     {
         _nodes.emplace_back(
             std::make_unique<Node<std::function<void(Args...)>, Args...>>(
-                this, func, name)
-        );
-        return static_cast<Node<std::function<void(Args...)>, Args...>*>(_nodes.back().get());
+                this, func, name));
+        return static_cast<Node<std::function<void(Args...)>, Args...>*>(
+            _nodes.back().get());
     }
 
-    Node<std::function<void()>>* makeNode(std::function<void()> func, const char* name = "")
+    Node<std::function<void()>>* makeNode(std::function<void()> func,
+                                          const char* name = "")
     {
         _nodes.emplace_back(
-            std::make_unique<Node<std::function<void()>>>(
-                this, func, name)
-        );
+            std::make_unique<Node<std::function<void()>>>(this, func, name));
         return static_cast<Node<std::function<void()>>*>(_nodes.back().get());
     }
 
@@ -308,21 +305,8 @@ public:
 
     void reset()
     {
-        std::unordered_set<BaseNode*> vis;
-        std::function<bool(BaseNode*)> dfs =
-            [&](BaseNode* currentNode) -> bool {
-            vis.insert(currentNode);
-            currentNode->reset();
-            for (auto& nextNode : currentNode->_nextNodes) {
-                if (vis.find(nextNode) == vis.end()) {
-                    dfs(nextNode);
-                }
-            }
-            return false;
-        };
         for (auto& node : _nodes) {
-            if (vis.find(node.get()) == vis.end())
-                dfs(node.get());
+            node->reset();
         }
         _finishedCount = 0;
     }
@@ -338,7 +322,8 @@ public:
             _pool.push(std::bind(&BaseNode::execute, initialNode));
         {
             std::unique_lock<std::mutex> lock(_mutex);
-            _cv.wait(lock, [this](){ return _finishedCount == _nodes.size(); });
+            _cv.wait(lock,
+                     [this]() { return _finishedCount == _nodes.size(); });
         }
     }
 
@@ -401,9 +386,10 @@ void Node<TaskCallback, Args...>::execute()
     }
     else {
         if constexpr (!std::is_copy_constructible<ReturnType>::value) {
-            GE_ENFORCE(_childTasks.size() <= 1,
-                        "Internal Error: More than 1 child process for "
-                        "non-copyable object"); // TODO: should just fail brutally here
+            GE_ENFORCE(
+                _childTasks.size() <= 1,
+                "Internal Error: More than 1 child process for "
+                "non-copyable object");  // TODO: should just fail brutally here
             _result = std::apply(_task, std::move(_args));
             if (!_childTasks.empty()) {
                 _childTasks[0](std::move(_result.value()));

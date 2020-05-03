@@ -118,8 +118,7 @@ public:
     {
         if (this->isDone)
             return;
-        this->isDone =
-            true;  // give the waiting threads a command to finish
+        this->isDone = true;  // give the waiting threads a command to finish
         {
             std::unique_lock<std::mutex> lock(this->mutex);
             this->cv.notify_all();  // stop all waiting threads
