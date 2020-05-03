@@ -49,7 +49,7 @@ static void BM_FunctionCall(benchmark::State& state)
 }
 BENCHMARK(BM_FunctionCall);
 
-constexpr int loop_n = 10'000;
+constexpr int loop_n = 10'000'000;
 std::function<void(void)> firstCostlyFunc = []() -> void {
     for (int i = 0; i < loop_n; ++i)
         ;
@@ -68,8 +68,8 @@ std::function<int(int)> thirdCostlyFunc = [](int a) -> int {
     return a;
 };
 std::function<int(int)> fourthCostlyFunc = [](int a) -> int {
-    for (int i = 100; i >= 0; --i) {
-        for (int j = 1; j <= 100; ++j) {
+    for (int i = 10000; i >= 0; --i) {
+        for (int j = 1; j <= 10000; ++j) {
             a ^= (i % j);
             ++a;
         }
@@ -122,7 +122,6 @@ static void BM_GraphEX_Expensive(benchmark::State& state)
         fourth->setParent<0>(second);
         fifth->setParent<0>(third);
         fifth->setParent<1>(fourth);
-
         executor.execute();
     }
 }
@@ -161,7 +160,7 @@ static void BM_GraphEX_Expensive_Parallel(benchmark::State& state)
     sixth->setParent<1>(third);
     sixth->setParent<2>(fourth);
     sixth->setParent<3>(fifth);
-
+    executor.initialize();
     for (auto _ : state) {
         executor.execute();
         executor.reset();

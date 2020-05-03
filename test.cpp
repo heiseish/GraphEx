@@ -147,8 +147,8 @@ TEST_F(GraphExTest, ShouldBeAbleToHandleMovableObjectCorrectly)
     {
         GraphEx executor;
 
-        decltype(auto) preprocess =
-            executor.makeNode([]() -> void { std::cout << "Running preprocessing\n"; });
+        decltype(auto) preprocess = executor.makeNode(
+            []() -> void { std::cout << "Running preprocessing\n"; });
 
         std::function<MyMoveable()> firstFunc = []() -> MyMoveable {
             return {};
@@ -171,8 +171,8 @@ TEST_F(GraphExTest, ShouldBeAbleToHandleMovableObjectCorrectly)
     {
         GraphEx executor;
 
-        decltype(auto) preprocess =
-            executor.makeNode([]() -> void { std::cout << "Running preprocessing\n"; });
+        decltype(auto) preprocess = executor.makeNode(
+            []() -> void { std::cout << "Running preprocessing\n"; });
         std::function<MyMoveable()> firstFunc = []() -> MyMoveable {
             return {};
         };
@@ -485,7 +485,9 @@ TEST_F(GraphExTest, ResetAndExecuteRepeatedly)
     decltype(auto) third = executor.makeNode(thirdFunc);
     std::function<int(int)> fourthFunc = [](int a) -> int { return a * 2; };
     decltype(auto) fourth = executor.makeNode(fourthFunc);
-    std::function<int(int, int)> fifthFunc = [](int a, int b) -> int { return a % b; };
+    std::function<int(int, int)> fifthFunc = [](int a, int b) -> int {
+        return a % b;
+    };
     decltype(auto) fifth = executor.makeNode(fifthFunc);
 
     second->setParent(first);
@@ -494,8 +496,7 @@ TEST_F(GraphExTest, ResetAndExecuteRepeatedly)
     fifth->setParent<0>(third);
     fifth->setParent<1>(fourth);
 
-    for (uint8_t i = 0; i < 2; ++i)
-    {
+    for (uint8_t i = 0; i < 2; ++i) {
         EXPECT_FALSE(executor.hasCycle());
         executor.execute();
         EXPECT_EQ(third->collect(), 3);
@@ -503,6 +504,35 @@ TEST_F(GraphExTest, ResetAndExecuteRepeatedly)
         EXPECT_EQ(fifth->collect(), 1);
         executor.reset();
     }
+}
+
+TEST_F(GraphExTest, ShouldBeAbleToInjectParameterManually)
+{
+    GraphEx executor;
+    std::function<int(int)> secondFunc = [](int a) -> int { return a; };
+    decltype(auto) second = executor.makeNode(secondFunc);
+    std::function<int(int)> thirdFunc = [](int a) -> int { return a + 2; };
+    decltype(auto) third = executor.makeNode(thirdFunc);
+    std::function<int(int)> fourthFunc = [](int a) -> int { return a * 2; };
+    decltype(auto) fourth = executor.makeNode(fourthFunc);
+    std::function<int(int, int)> fifthFunc = [](int a, int b) -> int {
+        return a % b;
+    };
+    decltype(auto) fifth = executor.makeNode(fifthFunc);
+
+    third->setParent<0>(second);
+    fourth->setParent<0>(second);
+    fifth->setParent<0>(third);
+    fifth->setParent<1>(fourth);
+
+    second->feed<0>(10);
+    executor.execute();
+    EXPECT_EQ(fifth->collect(), 12);
+
+    executor.reset();
+    second->feed<0>(20);
+    executor.execute();
+    EXPECT_EQ(fifth->collect(), 22);
 }
 
 auto main(int argc, char** argv) -> int
