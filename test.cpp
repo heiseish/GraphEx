@@ -505,6 +505,37 @@ TEST_F(GraphExTest, ResetAndExecuteRepeatedly)
     }
 }
 
+
+TEST_F(GraphExTest, ShouldBeAbleToInjectParameterManually)
+{
+    GraphEx executor;
+    std::function<int(int)> secondFunc = [](int a) -> int { return a; };
+    decltype(auto) second = executor.makeNode(secondFunc);
+    std::function<int(int)> thirdFunc = [](int a) -> int { return a + 2; };
+    decltype(auto) third = executor.makeNode(thirdFunc);
+    std::function<int(int)> fourthFunc = [](int a) -> int { return a * 2; };
+    decltype(auto) fourth = executor.makeNode(fourthFunc);
+    std::function<int(int, int)> fifthFunc = [](int a, int b) -> int {
+        return a % b;
+    };
+    decltype(auto) fifth = executor.makeNode(fifthFunc);
+
+    third->setParent<0>(second);
+    fourth->setParent<0>(second);
+    fifth->setParent<0>(third);
+    fifth->setParent<1>(fourth);
+
+    second->feed<0>(10);
+    executor.execute();
+    EXPECT_EQ(fifth->collect(), 12);
+
+    executor.reset();
+    second->feed<0>(20);
+    executor.execute();
+    EXPECT_EQ(fifth->collect(), 22);
+}
+
+
 auto main(int argc, char** argv) -> int
 {
     ::testing::InitGoogleTest(&argc, argv);

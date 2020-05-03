@@ -186,6 +186,33 @@ public:
         _result.reset();
         _pendingCount = _parentCount;
     }
+    
+    /// @brief manually inject parameter for a single node
+    /// CAUTION: This function should not be used with parameters who are
+    /// expected to be transacted within the graph
+    ///
+    /// For example if we have 2 nodes
+    /// nodeA: funcA = () -> int a
+    /// nodeB: funcB = (int a, int b) -> void
+    /// and nodeB->setParent<0>(nodeA)
+    /// we cannot manually inject the first parameter for nodeB, since that
+    /// parameter is expected to come from A. What we could do is to inject the
+    /// second parameter by nodeB->feed<1>(param) template @param idx order of
+    /// the param to be injected
+    /// @param arg arg to be injected
+    template <size_t idx, typename ParamType>
+    void feed(ParamType arg)
+    {
+        if constexpr (!std::is_copy_constructible<ParamType>::value ||
+                      std::is_move_constructible<ParamType>::value) {
+            std::get<idx>(_args) = std::move(arg);
+        }
+        else
+            std::get<idx>(_args) = arg;
+
+        --_pendingCount;
+    }
+
 
 private:
     void incrementParentCount()
