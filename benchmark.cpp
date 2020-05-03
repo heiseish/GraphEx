@@ -193,7 +193,6 @@ static void BM_FunctionCall_Expensive_Parallel(benchmark::State& state)
         auto f4 = pool.push(std::bind(fourthCostlyFunc, res));
         sixCostlyFunc(f1.get(), f2.get(), f3.get(), f4.get());
     }
-    pool.stop();
 }
 BENCHMARK(BM_FunctionCall_Expensive_Parallel);
 

@@ -298,7 +298,6 @@ public:
                 dfs(node.get());
         }
         _finishedCount = 0;
-        _pool.reset();
     }
 
     /// @brief run the graph execution from input nodes
@@ -310,7 +309,10 @@ public:
                 initialNodes.push_back(nodePtr.get());
         for (auto* initialNode : initialNodes)
             _pool.push(std::bind(&BaseNode::execute, initialNode));
-        _pool.stop(true);
+        {
+            std::unique_lock<std::mutex> lock(_mutex);
+            _cv.wait(lock, [this](){ return _finishedCount == _nodes.size(); });
+        }
     }
 
     template <typename NodeType>
@@ -320,13 +322,18 @@ public:
     }
     void onSingleNodeCompleted()
     {
+        std::unique_lock<std::mutex> lock(_mutex);
         ++_finishedCount;
+        _cv.notify_all();
     }
 
 private:
     ctpl::thread_pool _pool;
     std::list<std::unique_ptr<BaseNode>> _nodes;
-    std::atomic<size_t> _finishedCount = 0;
+
+    size_t _finishedCount = 0;
+    std::mutex _mutex;
+    std::condition_variable _cv;
 };
 
 template <typename TaskCallback, typename... Args>
