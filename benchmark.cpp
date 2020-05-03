@@ -1,6 +1,12 @@
 #include <benchmark/benchmark.h>
 #include <algorithm>
+
+#ifdef USE_BOOST_LOCKLESS_Q
+#include "cptl.hpp"
+#else
 #include "cptl_stl.hpp"
+#endif
+
 #include "graphex.hpp"
 
 using namespace GE;

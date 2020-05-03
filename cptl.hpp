@@ -42,12 +42,12 @@ namespace ctpl {
 
 class thread_pool {
 public:
-    thread_pool() : q(_ctplThreadPoolLength_) { this->init(); }
-    thread_pool(int nThreads, int queueSize = _ctplThreadPoolLength_)
+    thread_pool() : q(_ctplThreadPoolLength_) {}
+    thread_pool(int nThreads, int queueSize = _ctplThreadPoolLength_) noexcept
         : q(queueSize)
     {
         this->threads.resize(nThreads);
-        for (int i = oldNThreads; i < nThreads; ++i) {
+        for (int i = 0; i < nThreads; ++i) {
             this->set_thread(i);
         }
     }

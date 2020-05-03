@@ -1,12 +1,13 @@
 # GraphEx
 ![Language](https://img.shields.io/badge/language-C%2B%2B-informational.svg?logo=C%2B%2B)
-![Status](https://img.shields.io/static/v1.svg?label=Status&message=alpha&color=yellow)
+![Version](https://img.shields.io/static/v1.svg?label=Status&message=1.0.0&color=yellow)
 ![Build](https://travis-ci.org/heiseish/GraphEx.svg?branch=master)
+
 <img src="docs/3-03.svg">
 
 Image Credit [Network Vectors by Vecteezy](https://www.vecteezy.com/free-vector/network)
 
-**A header-only C++17 graph-based execution model for a network of interlinked tasks. Support passing of arguments between each node task.**
+**A light-weight header-only C++17 graph-based execution model for a network of interlinked tasks. Support passing of arguments between each node task.**
 
 ## Sample usage:
 
@@ -182,6 +183,36 @@ executor.execute();
 EXPECT_EQ(second.collect(), 8);
 ```
 
+### Manually inject parameter into graph
+```C++
+using namespace GE;
+GraphEx executor;
+std::function<int(int)> secondFunc = [](int a) -> int { return a; };
+decltype(auto) second = executor.makeNode(secondFunc);
+std::function<int(int)> thirdFunc = [](int a) -> int { return a + 2; };
+decltype(auto) third = executor.makeNode(thirdFunc);
+std::function<int(int)> fourthFunc = [](int a) -> int { return a * 2; };
+decltype(auto) fourth = executor.makeNode(fourthFunc);
+std::function<int(int, int)> fifthFunc = [](int a, int b) -> int {
+    return a % b;
+};
+decltype(auto) fifth = executor.makeNode(fifthFunc);
+
+third->setParent<0>(second);
+fourth->setParent<0>(second);
+fifth->setParent<0>(third);
+fifth->setParent<1>(fourth);
+
+second->feed<0>(10); // put parameter for input node
+executor.execute();
+EXPECT_EQ(fifth->collect(), 12);
+
+executor.reset();
+second->feed<0>(20); // need to put again everytime graph reset
+executor.execute();
+EXPECT_EQ(fifth->collect(), 22);
+```
+
 ## Installation
 There are 2 variants of thread pools, one with Boost lockess queue. To use Boost lockless queue version, compile
 your program with `USE_BOOST_LOCKLESS_Q`. Do some benchmarking to see which is more optimal for your process.
@@ -189,21 +220,20 @@ After that, simply include `cptl.hpp` or `cptl_stl.hpp` and `graphex.hpp` in you
 
 
 ## Development
-The project is still under development and still too early for any usage.
 
 You'll need the following packages:
 1. CMake (>= 3.12) with Ninja build system (1.9.0)
-2. Boost (1.67.0)
-3. benchmark (1.5.0)
+2. Boost (1.67.0) (if use boost lockless queue)
+3. benchmark (1.5.0) 
 4. GTest (1.8.0)
 
-- To build the tests `./build.sh -b`
-- To run the tests `./build.sh -rt` or `./build/graph_test`
-- To run the benchmark `./build.sh -bm` or `./build/bmark`
+- To build the tests `make build`
+- To run the tests `make test` or `./build/graph_test`
+- To run the benchmark `make bench` or `./build/bmark`
 
-### TODO
-- [x] Add concurrency to tasks execution
-- [ ] Optimize further
+## Benchmark
+GraphEx provides better management of nodes/functions dependency while optimizing the speed with minimum overhead.
+<img src="docs/benchmark.png">
 
 ## Contribute
 ### Current contributors
